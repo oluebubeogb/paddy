@@ -4,6 +4,7 @@
 
 import { aiProvider, type ChatMessage } from "@/lib/ai/provider";
 import type { User, UserProfile, CompanionPreferences } from "@prisma/client";
+import { BUBBLE_DELIMITER, BUBBLE_FORMAT_PROMPT, splitReply, type ReplyBubble } from "./bubbles";
 
 const CORE_SYSTEM_PROMPT = `You are Paddy, the user's personal AI companion. You are warm, curious, conversational, and attentive to the user's preferences. Your purpose is to provide companionship, thoughtful advice, useful guidance, and continuity across conversations.
 
@@ -59,7 +60,7 @@ function buildRelationshipGuidance(prefs: CompanionPreferences | null): string {
 }
 
 export function buildSystemPrompt(ctx: CompanionContext): string {
-  const sections: string[] = [CORE_SYSTEM_PROMPT];
+  const sections: string[] = [CORE_SYSTEM_PROMPT, "\n" + BUBBLE_FORMAT_PROMPT];
 
   const prefs = ctx.user.companionPreferences;
   sections.push("\n## Relationship & Communication Preferences\n" + buildRelationshipGuidance(prefs));
@@ -98,7 +99,10 @@ export function buildChatMessages(ctx: CompanionContext): ChatMessage[] {
     const text = content.trim();
     if (!text || text === FAILED_REPLY_TEXT) return;
     const last = turns[turns.length - 1];
-    if (last && last.role === role) last.content += `\n\n${text}`;
+    // Consecutive assistant rows are bubbles of one turn — join them with the
+    // bubble delimiter so history doubles as a few-shot example of the format.
+    if (last && last.role === role)
+      last.content += role === "assistant" ? `\n${BUBBLE_DELIMITER}\n${text}` : `\n\n${text}`;
     else turns.push({ role, content: text });
   };
 
@@ -116,6 +120,18 @@ export async function generateCompanionResponse(
 ): Promise<string> {
   const result = await aiProvider.chat({ messages: buildChatMessages(ctx) });
   return result.content;
+}
+
+/**
+ * ONE provider call → several chat bubbles (split locally, never re-requested).
+ * @param batchSize how many user bubbles the current message bundles (for [reply:N]).
+ */
+export async function generateCompanionBubbles(
+  ctx: CompanionContext,
+  batchSize = 1
+): Promise<{ raw: string; bubbles: ReplyBubble[] }> {
+  const raw = await generateCompanionResponse(ctx);
+  return { raw, bubbles: splitReply(raw, batchSize) };
 }
 
 export async function* generateCompanionResponseStream(

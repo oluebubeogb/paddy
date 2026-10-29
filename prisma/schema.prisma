@@ -182,14 +182,22 @@ model Message {
   content          String
   origin           String   @default("user") // user | assistant | proactive
   generationStatus String?  @map("generation_status") // pending | streaming | completed | failed
+  // Multi-bubble chat: one AI call can yield several bubbles that share a turnId
+  // (ordered by sequence). replyToId powers WhatsApp-style quoted replies.
+  turnId           String?  @map("turn_id")
+  sequence         Int      @default(0)
+  replyToId        String?  @map("reply_to_id")
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replyTo      Message?     @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies      Message[]    @relation("MessageReplies")
   memories     Memory[]
 
   @@index([conversationId, createdAt])
+  @@index([turnId])
   @@index([userId])
   @@map("messages")
 }
