@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+.gitignore
+*.md
+.env
+.env.*
+!.env.example
+previews
+docs
+PHASE*.md
+paddy-mvp.zip
+npm-debug.log*
+.DS_Store
