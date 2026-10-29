@@ -90,13 +90,15 @@ baseline as applied once instead of re-running it:
 
 Coolify's Traefik terminates TLS — do not run Caddy.
 
-1. Compose file: **`docker-compose.coolify.yml`** (no proxy).  
-   Or keep `docker-compose.prod.yml` — Caddy is behind Compose profile `vps`, so Coolify will not start it and **`DOMAIN` is optional**.
-2. Map your domain to service **`web`**, port **`3000`**.
-3. Env (required): `POSTGRES_PASSWORD`, `AUTH_SECRET`, `APP_URL=https://your-domain`, plus `AI_API_KEY` and `EMAIL_FROM` + `RESEND_API_KEY` (or SMTP_*).
-4. You do **not** need `DOMAIN` on Coolify.
+1. Create a Coolify **PostgreSQL** resource with image **`pgvector/pgvector:pg17`** (needs the `vector` extension). Copy its `DATABASE_URL`.
+2. App compose file: **`docker-compose.coolify.yml`** (no in-stack Postgres; Redis stays in compose).
+3. Map your domain to service **`web`**, port **`3000`**.
+4. Env (required): `DATABASE_URL`, `AUTH_SECRET`, `APP_URL=https://your-domain`, plus `AI_API_KEY` and `EMAIL_FROM` + `RESEND_API_KEY` (or SMTP_*).
+5. You do **not** need `DOMAIN` or `POSTGRES_PASSWORD` on the app (DB password lives in `DATABASE_URL`).
 
-The deploy error `required variable DOMAIN is missing` means the repo still has the old compose; push this fix and redeploy.
+Full steps: [`docs/COOLIFY_EXTERNAL_POSTGRES.md`](./COOLIFY_EXTERNAL_POSTGRES.md).
+
+For a single-VPS Docker deploy without Coolify, use `docker-compose.prod.yml` (Postgres still in that file).
 
 ---
 

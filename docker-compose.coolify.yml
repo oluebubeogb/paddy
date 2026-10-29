@@ -1,10 +1,17 @@
-# Coolify compose for Paddy (no Caddy — Coolify Traefik terminates TLS).
-# In Coolify: Docker Compose → this file → map domain to service `web` port 3000.
-# Required env: POSTGRES_PASSWORD, APP_URL (https://your.domain), AUTH_SECRET,
-# plus AI_* and RESEND_API_KEY (or SMTP_*) for chat/email.
+# Coolify compose for Paddy — PostgreSQL is a Coolify *database service* (not in this file).
+# Traefik terminates TLS; map your domain to service `web` port 3000.
+#
+# 1) In Coolify: New Resource → Database → PostgreSQL
+#    Image MUST be: pgvector/pgvector:pg17  (plain postgres lacks `vector`)
+#    Create DB/user (e.g. paddy / strong password). Copy the generated DATABASE_URL.
+# 2) This app: Docker Compose → this file. Paste DATABASE_URL (or link the DB resource).
+# 3) Also set: AUTH_SECRET, APP_URL=https://your-domain, AI_*, EMAIL_FROM + RESEND/SMTP.
+#
+# App containers join the external `coolify` network so they can reach the DB service by hostname.
 
 x-app-env: &app-env
-  DATABASE_URL: postgresql://${POSTGRES_USER:-paddy}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-paddy}?schema=public
+  # Prefer the URL Coolify injects when you link a PostgreSQL resource.
+  DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL from Coolify PostgreSQL service}
   REDIS_URL: redis://redis:6379
   APP_URL: ${APP_URL:?set APP_URL (https://your-domain)}
   AI_PROVIDER: ${AI_PROVIDER:-openai}
@@ -16,27 +23,9 @@ x-app-env: &app-env
   VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
   VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
   NODE_ENV: production
-  # Prefer A records so Prisma does not auth over broken IPv6 paths
   NODE_OPTIONS: ${NODE_OPTIONS:---dns-result-order=ipv4first}
 
 services:
-  postgres:
-    image: pgvector/pgvector:pg16
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-paddy}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB:-paddy}
-    volumes:
-      - paddy_pgdata:/var/lib/postgresql/data
-    networks:
-      - internal
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-paddy} -d ${POSTGRES_DB:-paddy}"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -51,23 +40,19 @@ services:
       timeout: 3s
       retries: 10
 
-  # One-shot: applies prisma/migrations (incl. CREATE EXTENSION vector) then exits.
+  # One-shot: prisma migrate deploy (incl. CREATE EXTENSION vector) then exits.
   migrate:
     image: paddy-worker:latest
     build:
       context: .
       dockerfile: Dockerfile.worker
-    # Root so Prisma can read engines; worker CMD still drops to uid 1001.
     user: "0:0"
     command: ["sh", "./scripts/migrate.sh"]
     environment:
       <<: *app-env
-      # Only DATABASE_URL is required for migrate; keep the shared block for consistency.
-    depends_on:
-      postgres:
-        condition: service_healthy
     networks:
       - internal
+      - coolify
     restart: "no"
 
   web:
@@ -88,11 +73,8 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
-    # Coolify Traefik reaches this port; no host publish needed on Coolify.
     expose:
       - "3000"
     networks:
@@ -123,19 +105,15 @@ services:
     networks:
       - internal
       - egress
-
+      - coolify
 
 volumes:
-  paddy_pgdata:
   paddy_redis:
 
 networks:
-  # Coolify/docker often publishes AAAA for service DNS; Prisma+libpq then
-  # authenticates over IPv6 and fails while IPv4 works. Keep this net IPv4-only.
   internal:
     internal: true
     enable_ipv6: false
   egress: {}
-  # Coolify's proxy network — Traefik reaches `web:3000` through this.
   coolify:
     external: true
