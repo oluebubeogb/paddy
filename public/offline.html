@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0d9488" />
+<title>Offline · Paddy</title>
+<link rel="icon" href="/favicon.ico" />
+<style>
+  :root { --bg:#faf8f5; --fg:#1c1917; --muted:#78716c; --primary:#0d9488; --card:#fff; --border:#e7e5e4; color-scheme: light dark; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0c0a09; --fg:#fafaf9; --muted:#a8a29e; --primary:#2dd4bf; --card:#1c1917; --border:#292524; } }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100dvh; display:grid; place-items:center; background:
+    radial-gradient(40rem 20rem at 50% -10%, rgba(13,148,136,.14), transparent 70%), var(--bg);
+    color:var(--fg); font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; padding:24px; }
+  .card { max-width:360px; text-align:center; background:var(--card); border:1px solid var(--border); border-radius:24px; padding:32px 24px; box-shadow:0 10px 30px rgba(0,0,0,.06); }
+  img { width:72px; height:72px; animation: float 3s ease-in-out infinite; }
+  h1 { font-size:20px; margin:16px 0 6px; letter-spacing:-.01em; }
+  p { color:var(--muted); font-size:14px; line-height:1.55; margin:0 0 20px; }
+  button { appearance:none; border:0; border-radius:999px; background:var(--primary); color:#fff; font:inherit; font-weight:600; font-size:14px; padding:10px 22px; cursor:pointer; }
+  @keyframes float { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-6px) } }
+  @media (prefers-reduced-motion: reduce) { img { animation:none } }
+</style>
+</head>
+<body>
+  <main class="card">
+    <img src="/icons/paddy-mark.svg" alt="" />
+    <h1>You're offline</h1>
+    <p>Paddy needs a connection to chat. Your conversations are safe — reconnect and pick up right where you left off.</p>
+    <button type="button" onclick="location.reload()">Try again</button>
+  </main>
+  <script>addEventListener("online", () => location.reload());</script>
+</body>
+</html>

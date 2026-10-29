@@ -4,7 +4,7 @@
  */
 
 import { prisma } from "@/lib/db";
-import { aiProvider } from "@/lib/ai/provider";
+import { normalizeAiBaseUrl } from "@/lib/ai/provider";
 import type { ExtractedMemory } from "./types";
 
 export interface StoredMemory {
@@ -182,9 +182,11 @@ export async function clearMemories(
  */
 export async function generateEmbedding(text: string): Promise<number[] | null> {
   const apiKey = process.env.AI_API_KEY;
-  const baseUrl = process.env.AI_BASE_URL || "https://api.openai.com/v1";
+  const baseUrl = normalizeAiBaseUrl(process.env.AI_BASE_URL);
   const model = process.env.AI_EMBEDDING_MODEL || "text-embedding-3-small";
-  if (!apiKey) return null;
+  // Set AI_EMBEDDING_MODEL=none for chat-only endpoints (e.g. RunPod vLLM) so
+  // we don't spend a billed request on an /embeddings call that will fail.
+  if (!apiKey || model.toLowerCase() === "none") return null;
 
   try {
     const res = await fetch(`${baseUrl}/embeddings`, {
@@ -194,8 +196,12 @@ export async function generateEmbedding(text: string): Promise<number[] | null> 
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({ model, input: text }),
+      signal: AbortSignal.timeout(15_000),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.warn("[ai] embeddings unavailable", { status: res.status, model, baseUrl });
+      return null;
+    }
     const data = await res.json();
     return data.data?.[0]?.embedding ?? null;
   } catch {

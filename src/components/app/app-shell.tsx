@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { Brain, CalendarHeart, LogOut, MessageCircle, Sparkles } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { Brain, CalendarHeart, MessageCircle, Sparkles } from "lucide-react";
 import { PaddyLogo } from "@/components/brand/paddy-mark";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { cn } from "@/lib/utils";
@@ -16,14 +16,6 @@ export const NAV = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
-
-  async function signOut() {
-    await fetch("/api/auth/sign-out", { method: "POST" }).catch(() => {});
-    router.push("/sign-in");
-    router.refresh();
-  }
-
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-background">
       <header className="glass sticky top-0 z-40 border-b border-border/70">
@@ -56,15 +48,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
           <div className="ml-auto flex items-center gap-1">
             <ThemeToggle />
-            <button
-              type="button"
-              onClick={signOut}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-              aria-label="Sign out"
-              title="Sign out"
-            >
-              <LogOut className="h-[18px] w-[18px]" />
-            </button>
           </div>
         </div>
       </header>

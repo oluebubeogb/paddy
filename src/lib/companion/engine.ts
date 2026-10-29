@@ -80,37 +80,46 @@ export function buildSystemPrompt(ctx: CompanionContext): string {
   return sections.join("\n");
 }
 
+/** Canned text stored on failed replies — never feed it back to the model. */
+export const FAILED_REPLY_TEXT =
+  "I'm having trouble responding right now. Please try again in a moment.";
+
+/**
+ * Build the chat transcript sent to the provider.
+ *  - `recentMessages` must NOT include the current user message (it's appended last).
+ *  - Drops empty / failed / non-chat messages.
+ *  - Merges consecutive same-role turns and makes the history start with a user
+ *    turn: many open-model chat templates on vLLM/RunPod (Mistral, Gemma, Llama)
+ *    reject non-alternating roles with HTTP 400 — after you've been billed.
+ */
+export function buildChatMessages(ctx: CompanionContext): ChatMessage[] {
+  const turns: ChatMessage[] = [];
+  const push = (role: "user" | "assistant", content: string) => {
+    const text = content.trim();
+    if (!text || text === FAILED_REPLY_TEXT) return;
+    const last = turns[turns.length - 1];
+    if (last && last.role === role) last.content += `\n\n${text}`;
+    else turns.push({ role, content: text });
+  };
+
+  for (const m of ctx.recentMessages) {
+    if (m.role === "user" || m.role === "assistant") push(m.role, m.content);
+  }
+  push("user", ctx.currentMessage);
+  while (turns.length && turns[0].role !== "user") turns.shift();
+
+  return [{ role: "system", content: buildSystemPrompt(ctx) }, ...turns];
+}
+
 export async function generateCompanionResponse(
   ctx: CompanionContext
 ): Promise<string> {
-  const systemPrompt = buildSystemPrompt(ctx);
-
-  const messages: ChatMessage[] = [
-    { role: "system", content: systemPrompt },
-    ...ctx.recentMessages.map((m) => ({
-      role: m.role as "user" | "assistant",
-      content: m.content,
-    })),
-    { role: "user", content: ctx.currentMessage },
-  ];
-
-  const result = await aiProvider.chat({ messages });
+  const result = await aiProvider.chat({ messages: buildChatMessages(ctx) });
   return result.content;
 }
 
 export async function* generateCompanionResponseStream(
   ctx: CompanionContext
 ): AsyncGenerator<string, void, unknown> {
-  const systemPrompt = buildSystemPrompt(ctx);
-
-  const messages: ChatMessage[] = [
-    { role: "system", content: systemPrompt },
-    ...ctx.recentMessages.map((m) => ({
-      role: m.role as "user" | "assistant",
-      content: m.content,
-    })),
-    { role: "user", content: ctx.currentMessage },
-  ];
-
-  yield* aiProvider.chatStream({ messages });
+  yield* aiProvider.chatStream({ messages: buildChatMessages(ctx) });
 }

@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, BellRing, Check, Heart, Sparkles, UserRound } from "lucide-react";
+import { Bell, BellRing, Check, Download, Heart, LogOut, ShieldCheck, Sparkles, UserRound } from "lucide-react";
+import { InstallAppButton } from "@/components/pwa/install-app";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, PageHeader, SectionTitle, Spinner } from "@/components/app/app-shell";
@@ -26,6 +27,8 @@ export default function CompanionSettingsPage() {
   const [preferredName, setPreferredName] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [proactiveEnabled, setProactiveEnabled] = useState(false);
+  const [email, setEmail] = useState("");
+  const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -36,6 +39,7 @@ export default function CompanionSettingsPage() {
           return;
         }
         const data = await res.json();
+        setEmail(data.email || "");
         setDisplayName(data.profile?.displayName || "");
         setPreferredName(data.profile?.preferredName || "");
         setRelationshipStyle(data.companionPreferences?.relationshipStyle || "friend");
@@ -64,10 +68,27 @@ export default function CompanionSettingsPage() {
         toast(data.error || "Couldn't save your changes.", "error");
       }
     } catch {
-      toast("You seem to be offline.", "error");
+      toast(
+        navigator.onLine === false
+          ? "You're offline — reconnect and save again."
+          : "Couldn't reach Paddy to save. Try again.",
+        "error"
+      );
     } finally {
       setSaving(false);
     }
+  }
+
+  async function signOut() {
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      await fetch("/api/auth/sign-out", { method: "POST" });
+    } catch {
+      // Cookie is cleared server-side; fall through to sign-in either way.
+    }
+    router.push("/sign-in");
+    router.refresh();
   }
 
   async function enablePush() {
@@ -189,6 +210,39 @@ export default function CompanionSettingsPage() {
           <Button variant="secondary" size="sm" className="shrink-0 gap-2" onClick={() => void enablePush()}>
             <Bell className="h-4 w-4" />
             Turn on
+          </Button>
+        </Card>
+      </section>
+
+      <section className="space-y-3">
+        <SectionTitle icon={Download}>Paddy on your home screen</SectionTitle>
+        <Card className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Install Paddy as an app for a full-screen chat that&apos;s one tap away.
+          </p>
+          <InstallAppButton />
+        </Card>
+      </section>
+
+      <section className="space-y-3">
+        <SectionTitle icon={ShieldCheck}>Account</SectionTitle>
+        <Card className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-sm font-medium">Signed in{email ? " as" : ""}</p>
+            {email && <p className="truncate text-xs text-muted-foreground">{email}</p>}
+            <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+              Your conversations and memories stay safe when you sign out.
+            </p>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="shrink-0 gap-2 hover:text-destructive"
+            onClick={() => void signOut()}
+            disabled={signingOut}
+          >
+            <LogOut className="h-4 w-4" />
+            {signingOut ? "Signing out…" : "Sign out"}
           </Button>
         </Card>
       </section>

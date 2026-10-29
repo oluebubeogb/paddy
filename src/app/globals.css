@@ -162,6 +162,77 @@ body {
 }
 .animate-in { animation: paddy-in 0.25s ease-out both; }
 
+/* ---------- Landing motion ---------- */
+@keyframes paddy-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.rise { animation: paddy-rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.delay-1 { animation-delay: 0.08s; }
+.delay-2 { animation-delay: 0.16s; }
+.delay-3 { animation-delay: 0.24s; }
+.delay-4 { animation-delay: 0.32s; }
+.delay-5 { animation-delay: 0.48s; }
+.delay-6 { animation-delay: 0.64s; }
+
+@keyframes paddy-float {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-8px) rotate(-2deg); }
+}
+.float { animation: paddy-float 5s ease-in-out infinite; }
+
+@keyframes paddy-pulse-ring {
+  0% { transform: scale(0.85); opacity: 0.55; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+.pulse-ring::before,
+.pulse-ring::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: var(--glow);
+  animation: paddy-pulse-ring 3.2s ease-out infinite;
+}
+.pulse-ring::after { animation-delay: 1.6s; }
+
+@keyframes paddy-shimmer {
+  to { background-position: 200% center; }
+}
+.text-shimmer {
+  background: linear-gradient(90deg, var(--primary), #5eead4 30%, var(--primary) 60%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: paddy-shimmer 6s linear infinite;
+}
+
+.dot-grid {
+  background-image: radial-gradient(color-mix(in srgb, var(--foreground) 9%, transparent) 1px, transparent 1px);
+  background-size: 22px 22px;
+  mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+}
+
+/* Lift-on-hover cards with a soft primary glow */
+.lift {
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.3s, border-color 0.3s;
+}
+.lift:hover {
+  transform: translateY(-4px);
+  border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
+  box-shadow: 0 18px 40px -18px color-mix(in srgb, var(--primary) 45%, transparent);
+}
+
+/* Reveal on scroll where supported; otherwise simply visible. */
+@supports (animation-timeline: view()) {
+  .reveal {
+    animation: paddy-rise linear both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 75%;
+  }
+}
+
 /* Assistant markdown */
 .md > * + * { margin-top: 0.6em; }
 .md ul { list-style: disc; padding-left: 1.25rem; }
@@ -194,4 +265,6 @@ body {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+  .reveal, .float, .text-shimmer, .pulse-ring::before, .pulse-ring::after { animation: none !important; }
+  .lift:hover { transform: none; }
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
 import { generateCompanionResponse } from "@/lib/companion/engine";
+import { AIProviderError, aiProvider } from "@/lib/ai/provider";
 import { retrieveRelevantMemories } from "@/lib/memory/store";
 import { enqueueMemoryProcessing } from "@/lib/memory/process";
 import { z } from "zod";
@@ -63,7 +64,7 @@ export async function POST(req: NextRequest, { params }: Params) {
   }
 
   const { id } = await params;
-  const body = await req.json();
+  const body = await req.json().catch(() => null);
   const parsed = postSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid input" }, { status: 400 });
@@ -77,6 +78,24 @@ export async function POST(req: NextRequest, { params }: Params) {
   }
 
   const content = parsed.data.content.trim();
+  if (!content) {
+    return NextResponse.json({ error: "Message is empty" }, { status: 400 });
+  }
+
+  // Recent context (last 20 completed messages) — loaded BEFORE saving the new
+  // message so the current turn isn't sent to the model twice.
+  const recent = await prisma.message.findMany({
+    where: {
+      conversationId: id,
+      role: { in: ["user", "assistant"] },
+      // (explicit null branch: SQL NOT IN drops NULL rows, e.g. proactive messages)
+      OR: [{ generationStatus: null }, { generationStatus: { notIn: ["failed", "pending"] } }],
+    },
+    orderBy: { createdAt: "desc" },
+    take: 20,
+    select: { role: true, content: true },
+  });
+  const recentMessages = recent.reverse();
 
   // Persist user message
   const userMessage = await prisma.message.create({
@@ -90,15 +109,6 @@ export async function POST(req: NextRequest, { params }: Params) {
     },
   });
 
-  // Load recent context (last 20 messages)
-  const recent = await prisma.message.findMany({
-    where: { conversationId: id },
-    orderBy: { createdAt: "desc" },
-    take: 20,
-    select: { role: true, content: true },
-  });
-  const recentMessages = recent.reverse();
-
   // Create pending assistant message
   const assistantMessage = await prisma.message.create({
     data: {
@@ -111,6 +121,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     },
   });
 
+  const started = Date.now();
   try {
     // Retrieve relevant memories for context (non-blocking on failure)
     let relevantMemories: { category: string; content: string }[] = [];
@@ -126,10 +137,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     const reply = await generateCompanionResponse({
       user: user as unknown as Parameters<typeof generateCompanionResponse>[0]["user"],
-      recentMessages: recentMessages.map((m) => ({
-        role: m.role,
-        content: m.content,
-      })),
+      recentMessages,
       relevantMemories,
       currentMessage: content,
     });
@@ -155,28 +163,35 @@ export async function POST(req: NextRequest, { params }: Params) {
       assistantMessage: updated,
     });
   } catch (err) {
-    console.error("AI generation error", err);
-    await prisma.message.update({
-      where: { id: assistantMessage.id },
-      data: {
-        content: "I'm having trouble responding right now. Please try again in a moment.",
-        generationStatus: "failed",
-      },
+    const elapsedMs = Date.now() - started;
+    // Server-side diagnostics: never logs the API key or message content.
+    console.error("[chat] AI generation failed", {
+      conversationId: id,
+      userId: user.id,
+      elapsedMs,
+      provider: aiProvider.describe(),
+      ...(err instanceof AIProviderError
+        ? err.toLog()
+        : { kind: "unknown", message: err instanceof Error ? err.message : String(err) }),
     });
 
+    // Roll back this turn so a reload doesn't show a stale "trouble responding"
+    // bubble and the client can put the text back in the composer for a retry.
+    await prisma.message
+      .deleteMany({ where: { id: { in: [userMessage.id, assistantMessage.id] } } })
+      .catch((e) => console.error("[chat] rollback failed", e));
+
+    const kind = err instanceof AIProviderError ? err.kind : "unknown";
+    const error =
+      kind === "timeout"
+        ? "Paddy is taking too long to answer (the AI server may be waking up). Please try again."
+        : kind === "config"
+          ? "Paddy's AI isn't configured on the server yet."
+          : "Paddy is having trouble responding right now. Please try again in a moment.";
+
     return NextResponse.json(
-      {
-        userMessage,
-        error: "AI generation failed",
-        assistantMessage: {
-          id: assistantMessage.id,
-          role: "assistant",
-          content:
-            "I'm having trouble responding right now. Please try again in a moment.",
-          generationStatus: "failed",
-        },
-      },
-      { status: 502 }
+      { error, code: "ai_unavailable", reason: kind, retryable: kind !== "config" },
+      { status: kind === "timeout" ? 504 : 502 }
     );
   }
 }

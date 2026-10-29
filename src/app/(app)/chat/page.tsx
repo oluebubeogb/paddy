@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  AlertCircle,
   ArrowUp,
   MessageCircle,
   MessageSquarePlus,
   PanelLeft,
+  RotateCw,
   Trash2,
   X,
 } from "lucide-react";
@@ -58,6 +60,7 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  const [retryText, setRetryText] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -129,6 +132,7 @@ export default function ChatPage() {
       freshIdRef.current = null;
       setMessages([]);
       setError("");
+      setRetryText(null);
     }
     setActiveId(id);
     setSidebarOpen(false);
@@ -160,6 +164,15 @@ export default function ChatPage() {
   async function sendMessage(text?: string) {
     const content = (text ?? input).trim();
     if (!content || sending) return;
+
+    // Only call it "offline" when the browser actually is.
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      setError("You're offline. Reconnect and try again — your message is still in the box.");
+      setInput(content);
+      setRetryText(content);
+      return;
+    }
+
     let convId = activeId;
     if (!convId) convId = await createConversation();
     if (!convId) return;
@@ -167,6 +180,7 @@ export default function ChatPage() {
     setInput("");
     setSending(true);
     setError("");
+    setRetryText(null);
 
     const tempId = `temp-${++tempSeq.current}`;
     setMessages((prev) => [
@@ -175,33 +189,73 @@ export default function ChatPage() {
     ]);
     setTimeout(scrollToBottom, 30);
 
+    const fail = (msg: string) => {
+      setError(msg);
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      setInput(content);
+      setRetryText(content);
+    };
+
+    let res: Response;
     try {
-      const res = await fetch(`/api/conversations/${convId}/messages`, {
+      res = await fetch(`/api/conversations/${convId}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content }),
+        // A little longer than the server's AI timeout (AI_TIMEOUT_MS, 120s default).
+        signal: AbortSignal.timeout(150_000),
       });
-      const data = await res.json();
+    } catch (err) {
+      const name = (err as Error)?.name;
+      if (name === "TimeoutError" || name === "AbortError") {
+        fail("Paddy took too long to answer. Your message is back in the box — try again.");
+      } else if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        fail("You're offline. Your message is back in the box.");
+      } else {
+        fail("Couldn't reach Paddy — the connection dropped. Your message is back in the box.");
+      }
+      setSending(false);
+      textareaRef.current?.focus();
+      return;
+    }
 
-      if (!res.ok && !data.assistantMessage) {
-        setError(data.error || "That didn't send. Try again?");
-        setMessages((prev) => prev.filter((m) => m.id !== tempId));
-        setInput(content);
+    try {
+      // Proxies (Traefik/Coolify) can answer with HTML on 502/504 — don't let
+      // a JSON parse error masquerade as a network problem.
+      const data = await res.json().catch(() => null);
+
+      if (res.status === 401) {
+        router.push("/sign-in");
+        return;
+      }
+
+      if (!res.ok || !data?.assistantMessage) {
+        if (res.status === 429) {
+          fail(data?.error || "You're sending messages quickly — give it a moment and try again.");
+        } else if (res.status === 504) {
+          fail(
+            data?.error ||
+              "Paddy is taking too long to answer (the AI server may be waking up). Try again in a moment."
+          );
+        } else if (res.status >= 500 || !data) {
+          fail(
+            data?.error ||
+              "Paddy is having trouble responding right now. Your message is back in the box — try again."
+          );
+        } else {
+          fail(data?.error || "That didn't send. Try again?");
+        }
         return;
       }
 
       setMessages((prev) => {
         const next = prev.filter((m) => m.id !== tempId);
         if (data.userMessage) next.push(data.userMessage);
-        if (data.assistantMessage) next.push(data.assistantMessage);
+        next.push(data.assistantMessage);
         return next;
       });
       setTimeout(scrollToBottom, 50);
       void loadConversations();
-    } catch {
-      setError("You seem to be offline. Your message is back in the box.");
-      setMessages((prev) => prev.filter((m) => m.id !== tempId));
-      setInput(content);
     } finally {
       setSending(false);
       textareaRef.current?.focus();
@@ -375,7 +429,9 @@ export default function ChatPage() {
                         "rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed",
                         mine
                           ? "whitespace-pre-wrap rounded-br-md bg-[var(--user-bubble)] text-[var(--user-bubble-fg)] shadow-sm"
-                          : "rounded-bl-md border border-border bg-[var(--assistant-bubble)] text-[var(--assistant-bubble-fg)] shadow-sm"
+                          : m.generationStatus === "failed"
+                            ? "rounded-bl-md border border-dashed border-border bg-transparent text-muted-foreground italic"
+                            : "rounded-bl-md border border-border bg-[var(--assistant-bubble)] text-[var(--assistant-bubble-fg)] shadow-sm"
                       )}
                     >
                       {mine ? body : <Markdown>{body}</Markdown>}
@@ -398,9 +454,23 @@ export default function ChatPage() {
         <div className="shrink-0 border-t border-border/70 bg-background/80 px-3 pb-3 pt-2 sm:px-6">
           <div className="mx-auto max-w-3xl">
             {error && (
-              <p role="alert" className="mb-2 text-center text-xs text-destructive">
-                {error}
-              </p>
+              <div
+                role="alert"
+                className="animate-in mb-2 flex items-center justify-center gap-2 rounded-2xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+              >
+                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                <span className="min-w-0">{error}</span>
+                {retryText && !sending && (
+                  <button
+                    type="button"
+                    onClick={() => void sendMessage(retryText)}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-full border border-destructive/30 px-2.5 py-0.5 font-medium transition-colors hover:bg-destructive/10"
+                  >
+                    <RotateCw className="h-3 w-3" />
+                    Retry
+                  </button>
+                )}
+              </div>
             )}
             <form
               onSubmit={(e) => {

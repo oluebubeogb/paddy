@@ -23,6 +23,15 @@ const nextConfig: NextConfig = {
       { source: "/reset-password", headers: tokenPageHeaders },
       { source: "/phrase", headers: tokenPageHeaders },
       { source: "/api/auth/:path*", headers: [{ key: "Cache-Control", value: "no-store" }] },
+      // Service worker must always be re-validated so new deploys roll out.
+      {
+        source: "/sw.js",
+        headers: [
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+          { key: "Content-Type", value: "application/javascript; charset=utf-8" },
+          { key: "Service-Worker-Allowed", value: "/" },
+        ],
+      },
     ];
   },
 };

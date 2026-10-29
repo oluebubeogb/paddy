@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ToastProvider } from "@/components/ui/toast";
 import { themeInitScript } from "@/components/theme/theme-script";
+import { PwaRegister } from "@/components/pwa/pwa-register";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -22,7 +23,14 @@ export const metadata: Metadata = {
   description:
     "Someone who remembers what matters to you. Everyday conversations, thoughtful guidance, and continuity that grows with you.",
   applicationName: "Paddy",
-  manifest: "/manifest.webmanifest",
+  // manifest + icon/apple-icon/favicon are linked automatically from
+  // src/app/manifest.ts, icon.svg, apple-icon.png and favicon.ico.
+  appleWebApp: {
+    capable: true,
+    title: "Paddy",
+    statusBarStyle: "default",
+  },
+  formatDetection: { telephone: false },
 };
 
 export const viewport: Viewport = {
@@ -51,6 +59,7 @@ export default function RootLayout({
       </head>
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <ToastProvider>{children}</ToastProvider>
+        <PwaRegister />
       </body>
     </html>
   );
