@@ -64,9 +64,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.worker
-    command: ["node_modules/.bin/prisma", "migrate", "deploy"]
+    # Root so Prisma can read engines; worker CMD still drops to uid 1001.
+    user: "0:0"
+    command: ["sh", "./scripts/migrate.sh"]
     environment:
       <<: *app-env
+      # Only DATABASE_URL is required for migrate; keep the shared block for consistency.
     depends_on:
       postgres:
         condition: service_healthy

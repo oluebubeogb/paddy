@@ -10,7 +10,9 @@ COPY prisma ./prisma
 RUN npm ci --omit=dev && npx prisma generate && npm cache clean --force
 
 COPY tsconfig.json ./
+COPY scripts/migrate.sh ./scripts/migrate.sh
 COPY src ./src
+RUN chmod +x ./scripts/migrate.sh
 
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 worker
