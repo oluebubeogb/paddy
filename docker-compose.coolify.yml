@@ -16,6 +16,8 @@ x-app-env: &app-env
   VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
   VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
   NODE_ENV: production
+  # Prefer A records so Prisma does not auth over broken IPv6 paths
+  NODE_OPTIONS: ${NODE_OPTIONS:---dns-result-order=ipv4first}
 
 services:
   postgres:
@@ -128,8 +130,11 @@ volumes:
   paddy_redis:
 
 networks:
+  # Coolify/docker often publishes AAAA for service DNS; Prisma+libpq then
+  # authenticates over IPv6 and fails while IPv4 works. Keep this net IPv4-only.
   internal:
     internal: true
+    enable_ipv6: false
   egress: {}
   # Coolify's proxy network — Traefik reaches `web:3000` through this.
   coolify:

@@ -25,6 +25,7 @@ x-app-env: &app-env
   VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
   VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
   NODE_ENV: production
+  NODE_OPTIONS: ${NODE_OPTIONS:---dns-result-order=ipv4first}
 
 services:
   postgres:
@@ -160,4 +161,5 @@ volumes:
 networks:
   internal:
     internal: true
+    enable_ipv6: false
   egress: {}
