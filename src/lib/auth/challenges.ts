@@ -6,6 +6,7 @@
 
 import { createHash, randomBytes } from "crypto";
 import { prisma } from "@/lib/db";
+import type { Prisma } from "@prisma/client";
 import { generateUniquePhrase } from "@/lib/phrase-generator";
 
 export type ChallengePurpose =
@@ -82,7 +83,7 @@ export async function createEmailChallenge(
       phrase,
       expiresAt,
       userId: userId ?? undefined,
-      requestMetadata: requestMetadata ?? undefined,
+      requestMetadata: (requestMetadata as Prisma.InputJsonValue) ?? undefined,
     },
   });
 

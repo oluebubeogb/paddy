@@ -24,7 +24,11 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Invalid input" }, { status: 400 });
   }
 
-  const data: Record<string, unknown> = {};
+  const data: {
+    scheduledAt?: Date;
+    messageIntent?: string;
+    status?: string;
+  } = {};
   if (parsed.data.scheduledAt) data.scheduledAt = new Date(parsed.data.scheduledAt);
   if (parsed.data.messageIntent) data.messageIntent = parsed.data.messageIntent;
   if (parsed.data.status) data.status = parsed.data.status;
