@@ -2,9 +2,10 @@
 # Usage: docker compose -f docker-compose.prod.yml --env-file .env up -d --build
 #
 # ── Coolify users ────────────────────────────────────────────────────────────
-# Coolify already runs Traefik for TLS/routing. OMIT the `proxy` (Caddy)
-# service and its ports, assign your domain to the `web` service (port 3000)
-# in the Coolify UI, and keep everything else as is.
+# Coolify already runs Traefik for TLS/routing. Use this file as-is: the
+# `proxy` (Caddy) service is behind Compose profile `vps`, so Coolify never
+# starts it and never needs DOMAIN. Assign your domain to `web` (port 3000)
+# in the Coolify UI. Or set Base Directory compose to docker-compose.coolify.yml.
 # ─────────────────────────────────────────────────────────────────────────────
 #
 # Networks: postgres + redis live only on `internal` (no egress, not exposed).
@@ -95,6 +96,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # Coolify Traefik reaches this port; no host publish needed on Coolify.
+    expose:
+      - "3000"
     networks:
       - internal
       - egress
@@ -123,15 +127,17 @@ services:
       - internal
       - egress
 
-  # Coolify: delete this service (see header).
+  # VPS only (profile `vps`). Coolify: leave this alone — Traefik replaces Caddy.
+  # Start with: docker compose -f docker-compose.prod.yml --profile vps up -d
   proxy:
+    profiles: ["vps"]
     image: caddy:2-alpine
     restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
     environment:
-      DOMAIN: ${DOMAIN:?set DOMAIN (e.g. paddy.example.com)}
+      DOMAIN: ${DOMAIN:-localhost}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

@@ -88,9 +88,15 @@ baseline as applied once instead of re-running it:
 
 ### Coolify
 
-Use the compose file but **delete the `proxy` service** (Coolify's Traefik
-handles TLS). Set the domain on the `web` service, port 3000, and put the
-same variables in Coolify's environment UI. `DOMAIN` is then unused.
+Coolify's Traefik terminates TLS — do not run Caddy.
+
+1. Compose file: **`docker-compose.coolify.yml`** (no proxy).  
+   Or keep `docker-compose.prod.yml` — Caddy is behind Compose profile `vps`, so Coolify will not start it and **`DOMAIN` is optional**.
+2. Map your domain to service **`web`**, port **`3000`**.
+3. Env (required): `POSTGRES_PASSWORD`, `AUTH_SECRET`, `APP_URL=https://your-domain`, plus `AI_API_KEY` and `EMAIL_FROM` + `RESEND_API_KEY` (or SMTP_*).
+4. You do **not** need `DOMAIN` on Coolify.
+
+The deploy error `required variable DOMAIN is missing` means the repo still has the old compose; push this fix and redeploy.
 
 ---
 
