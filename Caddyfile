@@ -1,0 +1,22 @@
+# Replace {$DOMAIN} with your production domain, or set DOMAIN env for Caddy.
+# Example: paddy.example.com
+
+{$DOMAIN:localhost} {
+	reverse_proxy web:3000
+
+	header {
+		# Security headers
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+
+	encode gzip
+
+	log {
+		output stdout
+		format console
+	}
+}
