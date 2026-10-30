@@ -270,12 +270,11 @@ export type ChallengeService = ReturnType<typeof createChallengeService>;
 
 /** User-facing copy (blueprint §10). */
 export const REDEEM_MESSAGES: Record<RedeemFailure, string> = {
-  invalid_token: "This link isn't valid anymore. Let's send you a fresh one.",
-  no_challenge:
-    "We couldn't find a pending confirmation in this browser. Use the button in the email, or request a fresh one here.",
+  invalid_token: "This link isn't valid anymore.",
+  no_challenge: "No pending confirmation in this browser.",
   purpose_mismatch: "This confirmation can't be used here.",
   already_used: "This little secret has already been used.",
-  expired: "This little secret has expired. Let's send you a fresh one.",
-  too_many_attempts: "Too many tries. Let's send you a fresh one.",
-  invalid_phrase: "That phrase doesn't match. Check the email and try again.",
+  expired: "This little secret has expired.",
+  too_many_attempts: "Too many tries — grab a fresh one.",
+  invalid_phrase: "That phrase doesn't match.",
 };

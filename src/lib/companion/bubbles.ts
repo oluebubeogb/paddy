@@ -21,12 +21,14 @@ You are chatting in a messaging app, like texting a close friend. Instead of one
 
 The user's latest messages may be numbered like [1], [2], [3] because they sent several in a row. Reply to all of them naturally in one go. When a bubble answers a specific earlier message (not just the last one), start that bubble with [reply:N] — e.g. "[reply:1] haha yes, I remember that". Don't use [reply:N] on every bubble, only when it helps clarity. Never number your own bubbles or mention this format.
 
-Example:
-Hey you! 💚
+Write like a real person texting, not a formal letter: casing, punctuation, and abbreviations follow the "Match their texting style" notes below.
+
+Example (for a casual texter):
+hey you 💚
 ${BUBBLE_DELIMITER}
-[reply:1] That meeting sounds exhausting, how did it end?
+[reply:1] that meeting sounds exhausting, how did it end?
 ${BUBBLE_DELIMITER}
-And yes, pizza tonight is a great idea`;
+and yes pizza tonight is a great idea`;
 
 export interface BatchItem {
   content: string;

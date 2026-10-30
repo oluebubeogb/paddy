@@ -24,7 +24,7 @@ export default function PhrasePage() {
     const token = takeUrlToken("hash");
     if (!token) {
       queueMicrotask(() =>
-        setError("This link is missing its little secret. Open it again from your email.")
+        setError("This link is missing its little secret.")
       );
       return;
     }
@@ -46,8 +46,13 @@ export default function PhrasePage() {
 
   return (
     <AuthShell
-      title="Your little secret 💚"
-      subtitle="Copy it, then paste it into Paddy in the browser where you started."
+      title={error ? "Link expired" : "Your little secret 💚"}
+      subtitle={error ? "Grab a fresh one in a tap." : "Copy it, then paste it into Paddy."}
+      tip={
+        error
+          ? "Paddy links work once and only for a short while, to keep your account safe."
+          : "Paste it in the browser where you started — that's how Paddy knows it's really you."
+      }
       footer={
         phrase ? (
           <p>
@@ -60,6 +65,14 @@ export default function PhrasePage() {
       }
     >
       <FormError>{error}</FormError>
+      {error && (
+        <Link
+          href={purpose === "reset_password" ? "/forgot-password" : "/verify-email?expired=1"}
+          className="mt-4 flex h-12 w-full items-center justify-center rounded-full bg-primary text-base font-medium text-primary-foreground transition-all hover:-translate-y-px hover:shadow-md hover:shadow-primary/25"
+        >
+          Send a fresh one
+        </Link>
+      )}
       {!error && !phrase && <Spinner label="Fetching your phrase…" />}
       {phrase && <PhraseCard phrase={phrase} />}
     </AuthShell>

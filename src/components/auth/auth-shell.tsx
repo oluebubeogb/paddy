@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { PaddyMark } from "@/components/brand/paddy-mark";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
+import { InfoTip } from "@/components/ui/info-tip";
 import { cn } from "@/lib/utils";
 
 /** Shared frame for sign-in / sign-up / verify / reset / onboarding. */
@@ -11,6 +12,7 @@ export function AuthShell({
   footer,
   wide,
   center,
+  tip,
 }: {
   title: React.ReactNode;
   subtitle?: React.ReactNode;
@@ -18,6 +20,8 @@ export function AuthShell({
   footer?: React.ReactNode;
   wide?: boolean;
   center?: boolean;
+  /** Longer explanation, tucked into a tooltip next to the subtitle. */
+  tip?: React.ReactNode;
 }) {
   return (
     <div className="paddy-glow relative flex min-h-dvh items-center justify-center px-4 py-12">
@@ -28,8 +32,11 @@ export function AuthShell({
             <PaddyMark size={56} className="drop-shadow-sm" />
           </Link>
           <h1 className="mt-5 text-2xl font-semibold tracking-tight">{title}</h1>
-          {subtitle && (
-            <p className="mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">{subtitle}</p>
+          {(subtitle || tip) && (
+            <p className="mt-2 inline-flex max-w-sm items-center justify-center gap-1 text-sm leading-relaxed text-muted-foreground">
+              {subtitle && <span>{subtitle}</span>}
+              {tip && <InfoTip label="Why?" side="bottom">{tip}</InfoTip>}
+            </p>
           )}
         </div>
         {children && (

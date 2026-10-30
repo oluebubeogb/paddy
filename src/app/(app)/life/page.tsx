@@ -136,7 +136,7 @@ export default function LifePage() {
       <PageHeader
         icon={CalendarHeart}
         title="Life"
-        description="The moments and goals Paddy is keeping track of with you."
+        description="Moments and goals Paddy keeps track of."
       />
 
       <section className="space-y-3">

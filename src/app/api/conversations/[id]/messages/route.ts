@@ -8,6 +8,8 @@ import { AIProviderError, aiProvider } from "@/lib/ai/provider";
 import { retrieveRelevantMemories } from "@/lib/memory/store";
 import { enqueueMemoryProcessing } from "@/lib/memory/process";
 import { z } from "zod";
+import { getCurrentConversation, needsRotation } from "@/lib/chat/sessions";
+import { messageSelect as sharedMessageSelect } from "@/lib/chat/message-select";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -25,18 +27,8 @@ const postSchema = z.union([
   bubbleSchema,
 ]);
 
-const messageSelect = {
-  id: true,
-  role: true,
-  content: true,
-  origin: true,
-  generationStatus: true,
-  turnId: true,
-  sequence: true,
-  replyToId: true,
-  createdAt: true,
-  replyTo: { select: { id: true, role: true, content: true } },
-} as const;
+// Shared with the endless-chat timeline.
+const messageSelect = sharedMessageSelect;
 
 export async function GET(req: NextRequest, { params }: Params) {
   const user = await getCurrentUser();
@@ -95,6 +87,18 @@ export async function POST(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
+  // Endless chat: if the *current* session has run its course (a week, or a few
+  // quiet days), new messages quietly start the next session — no UI change.
+  let convId = id;
+  if (needsRotation(conversation)) {
+    const newest = await prisma.conversation.findFirst({
+      where: { userId: user.id, status: "active" },
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
+    });
+    if (newest?.id === id) convId = (await getCurrentConversation(user.id)).id;
+  }
+
   const rawItems = "messages" in parsed.data ? parsed.data.messages : [parsed.data];
   const items = rawItems
     .map((m, i) => ({ ...m, content: m.content.trim(), originalIndex: i }))
@@ -106,21 +110,23 @@ export async function POST(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "That's a lot at once — try splitting it up." }, { status: 400 });
   }
 
-  // Quoted messages must belong to this conversation.
+  // Quoted messages must belong to this user (the endless chat spans sessions).
   const quoteIds = [...new Set(items.map((m) => m.replyToId).filter((x): x is string => !!x))];
   const quoted = quoteIds.length
     ? await prisma.message.findMany({
-        where: { id: { in: quoteIds }, conversationId: id },
+        where: { id: { in: quoteIds }, userId: user.id, conversation: { status: "active" } },
         select: { id: true, role: true, content: true },
       })
     : [];
   const quotedById = new Map(quoted.map((q) => [q.id, q]));
 
   // Recent context (last 30 completed messages) — loaded BEFORE saving the new
-  // bubbles so the current turn isn't sent to the model twice.
+  // bubbles so the current turn isn't sent to the model twice. Spans the user's
+  // sessions so a weekly rotation never breaks the conversation's continuity.
   const recent = await prisma.message.findMany({
     where: {
-      conversationId: id,
+      userId: user.id,
+      conversation: { status: "active" },
       role: { in: ["user", "assistant"] },
       // (explicit null branch: SQL NOT IN drops NULL rows, e.g. proactive messages)
       OR: [{ generationStatus: null }, { generationStatus: { notIn: ["failed", "pending"] } }],
@@ -159,7 +165,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       }
       const row = await prisma.message.create({
         data: {
-          conversationId: id,
+          conversationId: convId,
           userId: user.id,
           role: "user",
           content: it.content,
@@ -179,7 +185,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     const placeholder = await prisma.message.create({
       data: {
-        conversationId: id,
+        conversationId: convId,
         userId: user.id,
         role: "assistant",
         content: "",
@@ -235,7 +241,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         i === 0
           ? await prisma.message.update({ where: { id: placeholder.id }, data, select: messageSelect })
           : await prisma.message.create({
-              data: { ...data, conversationId: id, userId: user.id, role: "assistant", origin: "assistant" },
+              data: { ...data, conversationId: convId, userId: user.id, role: "assistant", origin: "assistant" },
               select: messageSelect,
             });
       createdIds.push(row.id);
@@ -243,12 +249,12 @@ export async function POST(req: NextRequest, { params }: Params) {
     }
 
     await prisma.conversation.update({
-      where: { id },
+      where: { id: convId },
       data: { lastMessageAt: new Date() },
     });
 
     // Extract memories in background — does not block the response
-    enqueueMemoryProcessing(user.id, id);
+    enqueueMemoryProcessing(user.id, convId);
 
     const savedUsers = await prisma.message.findMany({
       where: { id: { in: userMessages.map((m) => m.id) } },
@@ -257,6 +263,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     });
 
     return NextResponse.json({
+      conversationId: convId,
       userMessages: savedUsers,
       assistantMessages,
       // Legacy single-bubble fields (older clients).
@@ -267,7 +274,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const elapsedMs = Date.now() - started;
     // Server-side diagnostics: never logs the API key or message content.
     console.error("[chat] AI generation failed", {
-      conversationId: id,
+      conversationId: convId,
       userId: user.id,
       elapsedMs,
       bubbles: items.length,

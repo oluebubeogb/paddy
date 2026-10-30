@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import { Brain, CalendarHeart, MessageCircle, Sparkles } from "lucide-react";
 import { PaddyLogo } from "@/components/brand/paddy-mark";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
+import { InfoTip } from "@/components/ui/info-tip";
+import { DobGate } from "@/components/dob/dob-gate";
 import { cn } from "@/lib/utils";
 
 export const NAV = [
@@ -53,6 +55,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </header>
 
       <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>
+      <DobGate />
 
       {/* Mobile tab bar */}
       <nav
@@ -96,11 +99,14 @@ export function PageHeader({
   icon: Icon,
   title,
   description,
+  tip,
   action,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   title: string;
   description?: React.ReactNode;
+  /** Longer explanation shown in a tooltip beside the title. */
+  tip?: React.ReactNode;
   action?: React.ReactNode;
 }) {
   return (
@@ -109,7 +115,14 @@ export function PageHeader({
         <Icon className="h-5 w-5" />
       </span>
       <div className="min-w-0 flex-1">
-        <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
+        <h1 className="flex items-center gap-1 text-xl font-semibold tracking-tight">
+          {title}
+          {tip && (
+            <InfoTip label={`About ${title}`} side="bottom" align="start">
+              {tip}
+            </InfoTip>
+          )}
+        </h1>
         {description && (
           <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{description}</p>
         )}

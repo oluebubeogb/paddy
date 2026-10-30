@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { takeUrlToken } from "@/lib/strip-token";
 import { CheckCircle2 } from "lucide-react";
 import { AuthShell, FormError } from "@/components/auth/auth-shell";
@@ -79,9 +80,6 @@ function ResetPasswordForm() {
     <form onSubmit={handleSubmit} className="space-y-4">
       {!token && (
         <>
-          <p className="text-sm text-muted-foreground text-center">
-            Paste the Paddy phrase from your email (in the same browser you requested it from).
-          </p>
           <label htmlFor="phrase" className="sr-only">Your Paddy phrase</label>
           <Input
             id="phrase"
@@ -95,9 +93,8 @@ function ResetPasswordForm() {
         </>
       )}
       <label htmlFor="new-password" className="sr-only">New password</label>
-      <Input
+      <PasswordInput
         id="new-password"
-        type="password"
         placeholder="New password (min 8 characters)"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
@@ -106,9 +103,8 @@ function ResetPasswordForm() {
         minLength={8}
       />
       <label htmlFor="confirm-password" className="sr-only">Confirm new password</label>
-      <Input
+      <PasswordInput
         id="confirm-password"
-        type="password"
         placeholder="Confirm new password"
         value={confirm}
         onChange={(e) => setConfirm(e.target.value)}
@@ -134,7 +130,8 @@ export default function ResetPasswordPage() {
   return (
     <AuthShell
       title="Let's get you back in"
-      subtitle="Choose a new password. Your other devices will be signed out, just to be safe."
+      subtitle="Choose a new password."
+      tip="Paste the phrase from your email in the same browser you requested it from. Other devices get signed out, just to be safe."
       footer={
         <Link href="/sign-in" className="text-primary hover:underline">
           Back to sign in

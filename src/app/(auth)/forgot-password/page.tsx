@@ -43,7 +43,8 @@ export default function ForgotPasswordPage() {
     return (
       <AuthShell
         title="Check your inbox 💚"
-        subtitle="Let's get you back in. If that email has a Paddy account, a little secret is on its way."
+        subtitle="A little secret is on its way."
+        tip="If that email has a Paddy account, you'll get a phrase. Tap the button in the email, or paste the phrase here."
         center
         footer={back}
       >
@@ -51,9 +52,6 @@ export default function ForgotPasswordPage() {
           <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
             <KeyRound className="h-6 w-6" />
           </span>
-          <p className="text-sm text-muted-foreground">
-            Tap the button in the email, or paste the phrase here.
-          </p>
           <Link
             href="/reset-password"
             className="flex h-12 w-full items-center justify-center rounded-full bg-primary text-base font-medium text-primary-foreground transition-opacity hover:opacity-90"
@@ -68,7 +66,7 @@ export default function ForgotPasswordPage() {
   return (
     <AuthShell
       title="Forgot your password?"
-      subtitle="No worries. Tell us your email and Paddy will send a little secret to get you back in."
+      subtitle="No worries — we'll send a little secret."
       footer={back}
     >
       <form onSubmit={handleSubmit} className="space-y-4">

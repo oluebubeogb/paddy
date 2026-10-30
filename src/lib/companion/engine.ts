@@ -5,6 +5,7 @@
 import { aiProvider, type ChatMessage } from "@/lib/ai/provider";
 import type { User, UserProfile, CompanionPreferences } from "@prisma/client";
 import { BUBBLE_DELIMITER, BUBBLE_FORMAT_PROMPT, splitReply, type ReplyBubble } from "./bubbles";
+import { analyzeTextingStyle, applyTextingStyle, buildTextingStylePrompt, type TextingStyle } from "./texting-style";
 
 const CORE_SYSTEM_PROMPT = `You are Paddy, the user's personal AI companion. You are warm, curious, conversational, and attentive to the user's preferences. Your purpose is to provide companionship, thoughtful advice, useful guidance, and continuity across conversations.
 
@@ -32,8 +33,17 @@ export interface CompanionContext {
   currentMessage: string;
 }
 
-function buildRelationshipGuidance(prefs: CompanionPreferences | null): string {
+/** How this user texts, read from their recent messages + the current one. */
+export function textingStyleFor(ctx: CompanionContext): TextingStyle {
+  const mine = ctx.recentMessages.filter((m) => m.role === "user").map((m) => m.content);
+  return analyzeTextingStyle([...mine, ...ctx.currentMessage.split("\n")]);
+}
+
+function buildRelationshipGuidance(prefs: CompanionPreferences | null, underage = false): string {
   if (!prefs) return "Relationship style: friend.";
+  if (underage) {
+    prefs = { ...prefs, relationshipStyle: prefs.relationshipStyle === "romantic" ? "friend" : prefs.relationshipStyle, flirtingEnabled: false };
+  }
 
   const styleMap: Record<string, string> = {
     friend: "Be a warm, supportive friend.",
@@ -55,6 +65,7 @@ function buildRelationshipGuidance(prefs: CompanionPreferences | null): string {
   } else {
     parts.push("Do not flirt.");
   }
+  if (underage) parts.push("The user is under 18: never romantic, flirty, or sexual.");
 
   return parts.join(" ");
 }
@@ -63,7 +74,11 @@ export function buildSystemPrompt(ctx: CompanionContext): string {
   const sections: string[] = [CORE_SYSTEM_PROMPT, "\n" + BUBBLE_FORMAT_PROMPT];
 
   const prefs = ctx.user.companionPreferences;
-  sections.push("\n## Relationship & Communication Preferences\n" + buildRelationshipGuidance(prefs));
+  sections.push(
+    "\n## Relationship & Communication Preferences\n" +
+      buildRelationshipGuidance(prefs, ctx.user.ageEligibilityStatus === "underage")
+  );
+  sections.push("\n" + buildTextingStylePrompt(textingStyleFor(ctx)));
 
   if (ctx.user.profile?.preferredName) {
     sections.push(`\n## User\nPreferred name: ${ctx.user.profile.preferredName}`);
@@ -131,7 +146,11 @@ export async function generateCompanionBubbles(
   batchSize = 1
 ): Promise<{ raw: string; bubbles: ReplyBubble[] }> {
   const raw = await generateCompanionResponse(ctx);
-  return { raw, bubbles: splitReply(raw, batchSize) };
+  const style = textingStyleFor(ctx);
+  const bubbles = splitReply(raw, batchSize)
+    .map((b) => ({ ...b, text: applyTextingStyle(b.text, style) }))
+    .filter((b) => b.text.length > 0);
+  return { raw, bubbles: bubbles.length ? bubbles : splitReply(raw, batchSize) };
 }
 
 export async function* generateCompanionResponseStream(

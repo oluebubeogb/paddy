@@ -7,6 +7,9 @@ import { Input } from "@/components/ui/input";
 import { ArrowLeft, ArrowRight, BellRing, Check, MessageCircleHeart } from "lucide-react";
 import { AuthShell, FieldLabel, FormError } from "@/components/auth/auth-shell";
 import { PaddyMark } from "@/components/brand/paddy-mark";
+import { InfoTip } from "@/components/ui/info-tip";
+import { DobField, ageFromIso } from "@/components/dob/dob-picker";
+import { ADULT_AGE, MIN_AGE } from "@/lib/user/age";
 import { cn } from "@/lib/utils";
 
 type Step = 1 | 2 | 3 | 4 | 5;
@@ -28,6 +31,10 @@ export default function OnboardingPage() {
   );
   const [relationshipStyle, setRelationshipStyle] = useState("friend");
   const [proactiveEnabled, setProactiveEnabled] = useState(false);
+  const [dob, setDob] = useState<string | null>(null);
+  const age = ageFromIso(dob);
+  const isAdult = age !== null && age >= ADULT_AGE;
+  const tooYoung = age !== null && age < MIN_AGE;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -42,8 +49,9 @@ export default function OnboardingPage() {
           displayName,
           preferredName: preferredName || displayName,
           timezone,
-          relationshipStyle,
+          relationshipStyle: relationshipStyle === "romantic" && !isAdult ? "friend" : relationshipStyle,
           proactiveEnabled,
+          ...(dob ? { dateOfBirth: dob } : { dobSkipped: true }),
         }),
       });
       if (!res.ok) {
@@ -98,7 +106,7 @@ export default function OnboardingPage() {
           className="space-y-4"
           onSubmit={(e) => {
             e.preventDefault();
-            if (displayName.trim()) setStep(2);
+            if (displayName.trim() && !tooYoung) setStep(2);
           }}
         >
           <div>
@@ -121,10 +129,26 @@ export default function OnboardingPage() {
             />
           </div>
           <div>
+            <div className="mb-1.5 flex items-center gap-1 text-xs font-medium text-muted-foreground">
+              <label htmlFor="dob">Birthday</label>
+              <span className="font-normal">(optional)</span>
+              <InfoTip label="Why Paddy asks for your birthday">
+                Paddy is for ages 13+, and romantic mode is 18+ only. Used for that and birthday wishes — never shown
+                to anyone.
+              </InfoTip>
+            </div>
+            <DobField value={dob} onChange={setDob} />
+            {tooYoung && (
+              <p role="alert" className="mt-2 text-xs text-destructive">
+                Paddy is for people {MIN_AGE} and older.
+              </p>
+            )}
+          </div>
+          <div>
             <FieldLabel htmlFor="timezone">Time zone</FieldLabel>
             <Input id="timezone" value={timezone} onChange={(e) => setTimezone(e.target.value)} />
           </div>
-          <Button type="submit" className="w-full gap-2" size="lg" disabled={!displayName.trim()}>
+          <Button type="submit" className="w-full gap-2" size="lg" disabled={!displayName.trim() || tooYoung}>
             Continue <ArrowRight className="h-4 w-4" />
           </Button>
         </form>
@@ -134,24 +158,30 @@ export default function OnboardingPage() {
         <div className="space-y-3">
           <div role="radiogroup" aria-label="Relationship style" className="space-y-2.5">
             {RELATIONSHIP_OPTIONS.map((opt) => {
-              const active = relationshipStyle === opt.value;
+              const locked = opt.value === "romantic" && !isAdult;
+              const active = relationshipStyle === opt.value && !locked;
               return (
                 <button
                   key={opt.value}
                   type="button"
                   role="radio"
                   aria-checked={active}
-                  onClick={() => setRelationshipStyle(opt.value)}
+                  aria-disabled={locked || undefined}
+                  onClick={() => !locked && setRelationshipStyle(opt.value)}
                   className={cn(
                     "flex w-full items-center gap-3 rounded-2xl border p-4 text-left transition-all",
-                    active
-                      ? "border-primary bg-primary/5 ring-2 ring-primary/20"
-                      : "border-border bg-card hover:bg-secondary"
+                    locked
+                      ? "cursor-not-allowed border-border bg-card opacity-60"
+                      : active
+                        ? "border-primary bg-primary/5 ring-2 ring-primary/20"
+                        : "border-border bg-card hover:bg-secondary"
                   )}
                 >
                   <div className="flex-1">
                     <div className="font-medium">{opt.label}</div>
-                    <div className="text-sm text-muted-foreground">{opt.desc}</div>
+                    <div className="text-sm text-muted-foreground">
+                      {locked ? (age === null ? "Add your birthday to unlock (18+)" : "18+ only") : opt.desc}
+                    </div>
                   </div>
                   <span
                     className={cn(
@@ -177,9 +207,11 @@ export default function OnboardingPage() {
           <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
             <MessageCircleHeart className="h-6 w-6" />
           </span>
-          <p className="text-sm text-muted-foreground">
-            Defaults are balanced and friendly. You can fine-tune humour,
-            directness, and affection later in Companion settings.
+          <p className="inline-flex items-center justify-center gap-1 text-sm text-muted-foreground">
+            Balanced &amp; friendly — tweak it later.
+            <InfoTip label="About communication style">
+              Fine-tune humour, directness, and affection any time in Companion settings. Paddy also picks up on how you text.
+            </InfoTip>
           </p>
           <NavButtons onBack={() => setStep(2)} onNext={() => setStep(4)} />
         </div>
@@ -190,11 +222,13 @@ export default function OnboardingPage() {
           <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-border p-4 transition-colors hover:bg-secondary/60">
             <BellRing className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
             <div className="flex-1">
-              <div className="font-medium">Enable proactive messages</div>
-              <div className="text-sm text-muted-foreground">
-                Paddy can follow up on events and start light conversations
-                when you want. You can turn this off any time.
+              <div className="flex items-center gap-1 font-medium">
+                Enable proactive messages
+                <InfoTip label="About proactive messages">
+                  Paddy can follow up on events and start light conversations when you want. Turn it off any time.
+                </InfoTip>
               </div>
+              <div className="text-sm text-muted-foreground">Paddy checks in first, sometimes.</div>
             </div>
             <input
               type="checkbox"
@@ -210,9 +244,7 @@ export default function OnboardingPage() {
       {step === 5 && (
         <div className="space-y-5 text-center">
           <PaddyMark size={72} className="mx-auto" />
-          <p className="text-muted-foreground">
-            Your companion profile is ready. Let&apos;s start a conversation.
-          </p>
+          <p className="text-muted-foreground">Let&apos;s start talking.</p>
           <FormError>{error}</FormError>
           <Button className="w-full gap-2" size="lg" onClick={finish} disabled={loading}>
             {loading ? "Saving…" : "Start chatting"}

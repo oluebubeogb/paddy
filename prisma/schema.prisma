@@ -25,6 +25,8 @@ model User {
   timezone              String    @default("UTC")
   preferredLanguage     String    @default("en") @map("preferred_language")
   ageEligibilityStatus  String?   @map("age_eligibility_status") // verified_adult | underage | unknown
+  dateOfBirth           DateTime? @map("date_of_birth") @db.Date
+  dobPromptedAt         DateTime? @map("dob_prompted_at") // last time we asked (for "not now")
   createdAt             DateTime  @default(now()) @map("created_at")
   updatedAt             DateTime  @updatedAt @map("updated_at")
 
@@ -199,6 +201,7 @@ model Message {
   @@index([conversationId, createdAt])
   @@index([turnId])
   @@index([userId])
+  @@index([userId, createdAt])
   @@map("messages")
 }
 

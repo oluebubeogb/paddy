@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
   const found = await challengeService.peekPhraseByToken(parsed.data.token);
   if (!found) {
     return NextResponse.json(
-      { error: "This little secret has expired or was already used. Let's send you a fresh one." },
+      { error: "This little secret has expired or was already used.", reason: "expired" },
       { status: 404, headers: { "Cache-Control": "no-store" } }
     );
   }

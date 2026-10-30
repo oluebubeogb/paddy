@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, EmptyState, PageHeader, Spinner } from "@/components/app/app-shell";
 import { useToast } from "@/components/ui/toast";
+import { ChatSessions } from "@/components/memories/chat-sessions";
 import { cn } from "@/lib/utils";
 
 interface Memory {
@@ -108,8 +109,13 @@ export default function MemoriesPage() {
       <PageHeader
         icon={Brain}
         title="Memories"
-        description="Things Paddy remembers about you. Edit or delete anything — deleting removes it from future conversations right away."
+        description="What Paddy remembers, and your chats."
+        tip="Edit or delete anything — deleting a memory removes it from future conversations right away."
       />
+
+      <ChatSessions />
+
+      <h2 className="-mb-3 text-sm font-semibold">What Paddy remembers</h2>
 
       <div className="space-y-3">
         <div className="relative">

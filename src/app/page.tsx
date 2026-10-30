@@ -100,11 +100,7 @@ export default function LandingPage() {
           <div className="dot-grid pointer-events-none absolute inset-0" aria-hidden />
           <div className="relative mx-auto grid max-w-5xl items-center gap-12 px-4 pb-16 pt-14 sm:px-6 sm:pt-20 lg:grid-cols-[1.15fr_1fr] lg:pb-24">
             <div className="text-center lg:text-left">
-              <span className="rise inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-xs font-medium text-primary">
-                <Heart className="h-3.5 w-3.5 fill-current" />
-                Your personal AI companion
-              </span>
-              <h1 className="rise delay-1 mt-5 text-4xl font-semibold leading-[1.08] tracking-tight text-foreground sm:text-5xl md:text-6xl">
+              <h1 className="rise text-4xl font-semibold leading-[1.08] tracking-tight text-foreground sm:text-5xl md:text-6xl">
                 Someone who <span className="text-shimmer">remembers</span> what matters to you.
               </h1>
               <p className="rise delay-2 mx-auto mt-6 max-w-xl text-lg leading-relaxed text-muted-foreground lg:mx-0">
@@ -138,15 +134,7 @@ export default function LandingPage() {
                 <PaddyMark size={88} className="float relative drop-shadow-md" title="Paddy" />
               </div>
               <div className="lift rounded-3xl border border-border bg-card/80 p-4 shadow-xl shadow-black/5 backdrop-blur">
-                <div className="flex items-center gap-2 border-b border-border pb-3">
-                  <PaddyMark size={20} />
-                  <span className="text-sm font-medium">Paddy</span>
-                  <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" aria-hidden />
-                    online
-                  </span>
-                </div>
-                <div className="space-y-3 pt-4 text-sm">
+                <div className="space-y-3 text-sm">
                   <div className="flex justify-end">
                     <p className="max-w-[80%] rounded-2xl rounded-br-md bg-[var(--user-bubble)] px-3.5 py-2 text-[var(--user-bubble-fg)] shadow-sm">
                       Big interview tomorrow… kind of nervous 😅

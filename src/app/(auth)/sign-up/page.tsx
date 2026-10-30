@@ -5,6 +5,8 @@ import Link from "next/link";
 import { MailCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
+import { InfoTip } from "@/components/ui/info-tip";
 import { AuthShell, FieldLabel, FormError } from "@/components/auth/auth-shell";
 
 export default function SignUpPage() {
@@ -42,7 +44,8 @@ export default function SignUpPage() {
     return (
       <AuthShell
         title="Check your inbox 💚"
-        subtitle="We've sent you something to confirm it's really you. Look for a little secret from Paddy."
+        subtitle="A little secret is on its way."
+        tip="Open the email from Paddy and tap “Confirm it's me”, or copy the phrase and paste it here in this same browser."
         center
         footer={
           <Link href="/sign-in" className="text-primary hover:underline">
@@ -63,9 +66,6 @@ export default function SignUpPage() {
           >
             Paste my secret phrase
           </Link>
-          <p className="text-xs text-muted-foreground">
-            Or just tap &ldquo;Confirm it&apos;s me&rdquo; in the email.
-          </p>
         </div>
       </AuthShell>
     );
@@ -74,7 +74,8 @@ export default function SignUpPage() {
   return (
     <AuthShell
       title="Meet Paddy"
-      subtitle="Let's make sure it's really you. We'll send a little secret to your inbox."
+      subtitle="Let's make sure it's really you."
+      tip="We'll email you a one-time Paddy phrase. Tap the button in the email or paste the phrase back here — no codes to type."
       footer={
         <p>
           Already have an account?{" "}
@@ -110,9 +111,8 @@ export default function SignUpPage() {
         </div>
         <div>
           <FieldLabel htmlFor="password">Password</FieldLabel>
-          <Input
+          <PasswordInput
             id="password"
-            type="password"
             placeholder="At least 8 characters"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -127,8 +127,11 @@ export default function SignUpPage() {
         <Button type="submit" className="w-full" size="lg" disabled={loading}>
           {loading ? "Sending your little secret…" : "Continue"}
         </Button>
-        <p className="text-center text-[11px] leading-relaxed text-muted-foreground">
-          Paddy is an AI companion — warm, honest about being AI, and never a replacement for the people in your life.
+        <p className="flex items-center justify-center gap-1 text-center text-[11px] text-muted-foreground">
+          Paddy is an AI companion
+          <InfoTip label="About Paddy">
+            Warm, honest about being AI, and never a replacement for the people in your life.
+          </InfoTip>
         </p>
       </form>
     </AuthShell>

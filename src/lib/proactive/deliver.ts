@@ -4,6 +4,7 @@
 
 import { prisma } from "@/lib/db";
 import { aiProvider } from "@/lib/ai/provider";
+import { getCurrentConversation } from "@/lib/chat/sessions";
 import {
   revalidateFollowUp,
   claimFollowUp,
@@ -51,13 +52,8 @@ export async function processFollowUp(followUpId: string): Promise<{
   // Ensure a conversation exists for the message
   let conversationId = followUp.conversationId;
   if (!conversationId) {
-    const conv = await prisma.conversation.create({
-      data: {
-        userId: user.id,
-        title: "Check-in from Paddy",
-        lastMessageAt: new Date(),
-      },
-    });
+    // Check-ins land in the endless main chat (the current session).
+    const conv = await getCurrentConversation(user.id);
     conversationId = conv.id;
     await prisma.followUp.update({
       where: { id: followUpId },

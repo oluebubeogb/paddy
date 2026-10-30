@@ -22,6 +22,7 @@ export interface ChatBubbleMessage {
   replyTo?: QuotedMessage | null;
   turnId?: string | null;
   sequence?: number;
+  conversationId?: string;
   /** Client-only: waiting in the batch window / on its way to Paddy. */
   status?: "queued" | "sending";
 }

@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   AlertCircle,
+  ArrowLeft,
   ArrowUp,
   MessageCircle,
-  MessageSquarePlus,
   PanelLeft,
   PanelLeftClose,
   Reply,
@@ -14,7 +15,6 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { PaddyMark } from "@/components/brand/paddy-mark";
 import { TypingIndicator } from "@/components/chat/typing-indicator";
 import {
@@ -26,6 +26,13 @@ import {
 import { Spinner } from "@/components/app/app-shell";
 import { useToast } from "@/components/ui/toast";
 import { cn, formatRelativeTime } from "@/lib/utils";
+import {
+  MAX_WAIT_IDLE_MS,
+  MAX_WAIT_TYPING_MS,
+  TYPING_ACTIVE_MS,
+  TYPING_RECHECK_MS,
+  adaptiveWaitMs,
+} from "@/lib/chat/adaptive-wait";
 
 type Message = ChatBubbleMessage;
 
@@ -33,6 +40,8 @@ interface Conversation {
   id: string;
   title: string | null;
   lastMessageAt: string | null;
+  createdAt?: string;
+  isCurrent?: boolean;
 }
 
 /** A user bubble waiting in the batch window. */
@@ -48,12 +57,30 @@ const STARTERS = [
   "I just want to chat for a bit.",
 ];
 
-/** Quiet time after the last bubble before Paddy answers the whole batch (one AI call). */
-const BATCH_WINDOW_MS = 2000;
-/** While the user is still typing, keep waiting — but never longer than this. */
-const TYPING_GRACE_MS = 1500;
-const MAX_BATCH_WAIT_MS = 9000;
+// Paddy waits adaptively before answering the whole batch (one AI call):
+// longer while the user is mid-thought, sooner after one clear message.
+// See lib/chat/adaptive-wait.ts.
 const SIDEBAR_KEY = "paddy.chat.sidebarCollapsed";
+const PAGE_SIZE = 40;
+
+function dayKey(iso: string) {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+function dayLabel(iso: string, todayKey: string | null, yesterdayKey: string | null) {
+  const k = dayKey(iso);
+  if (k === todayKey) return "Today";
+  if (k === yesterdayKey) return "Yesterday";
+  const d = new Date(iso);
+  const sameYear = todayKey?.startsWith(`${d.getFullYear()}-`);
+  return d.toLocaleDateString([], {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    ...(sameYear ? {} : { year: "numeric" }),
+  });
+}
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const isTemp = (id: string) => id.startsWith("temp-");
@@ -61,8 +88,20 @@ const isTemp = (id: string) => id.startsWith("temp-");
 const nowMs = () => Date.now();
 
 export default function ChatPage() {
+  return (
+    <Suspense fallback={<Spinner label="Opening your chat…" />}>
+      <ChatView />
+    </Suspense>
+  );
+}
+
+function ChatView() {
   const router = useRouter();
   const toast = useToast();
+  const searchParams = useSearchParams();
+  /** Browsing a past session from Memories → sidebar mode. Otherwise: the endless main chat. */
+  const sessionId = searchParams.get("session");
+  const sessionMode = !!sessionId;
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [convLoaded, setConvLoaded] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -77,17 +116,23 @@ export default function ChatPage() {
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false); // mobile drawer
   const [collapsed, setCollapsed] = useState(false); // desktop
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [typingNow, setTypingNow] = useState(false);
+  const [days, setDays] = useState<{ today: string; yesterday: string } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollAdjustRef = useRef<number | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const tempSeq = useRef(0);
   // A conversation we just created is empty — don't fetch (and clobber optimistic messages).
-  const freshIdRef = useRef<string | null>(null);
 
   // Batching state lives in refs so timers always see the latest values.
   const queueRef = useRef<QueuedBubble[]>([]);
   const queueConvRef = useRef<string | null>(null);
   const firstQueuedAtRef = useRef(0);
   const lastTypedAtRef = useRef(0);
+  const lastQueuedAtRef = useRef(0);
   const inFlightRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tempToRealRef = useRef(new Map<string, string>());
@@ -128,6 +173,17 @@ export default function ChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
 
+  // Today / Yesterday labels for day dividers (computed after mount).
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const now = new Date();
+      const y = new Date(now);
+      y.setDate(now.getDate() - 1);
+      setDays({ today: dayKey(now.toISOString()), yesterday: dayKey(y.toISOString()) });
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
+
   const loadConversations = useCallback(async () => {
     try {
       const res = await fetch("/api/conversations");
@@ -136,9 +192,7 @@ export default function ChatPage() {
         return;
       }
       const data = await res.json();
-      const list: Conversation[] = data.conversations || [];
-      setConversations(list);
-      setActiveId((prev) => prev ?? list[0]?.id ?? null);
+      setConversations(data.conversations || []);
     } catch {
       setError("Couldn't load your conversations.");
     } finally {
@@ -146,32 +200,96 @@ export default function ChatPage() {
     }
   }, [router]);
 
+  // Sessions sidebar only exists when browsing a past session.
   useEffect(() => {
+    if (!sessionMode) return;
     const t = setTimeout(() => void loadConversations(), 0);
     return () => clearTimeout(t);
-  }, [loadConversations]);
+  }, [sessionMode, loadConversations]);
 
+  /** One page of history: the endless timeline, or a single session when browsing. */
+  const fetchPage = useCallback(
+    async (cursor: string | null) => {
+      const qs = new URLSearchParams({ limit: String(PAGE_SIZE) });
+      if (cursor) qs.set("cursor", cursor);
+      const url = sessionId
+        ? `/api/conversations/${sessionId}/messages?${qs}`
+        : `/api/chat/timeline?${qs}`;
+      const res = await fetch(url, { cache: "no-store" });
+      if (res.status === 401) {
+        router.push("/sign-in");
+        return null;
+      }
+      if (res.status === 404 && sessionId) {
+        toast("That conversation isn't available anymore.", "error");
+        router.replace("/chat");
+        return null;
+      }
+      if (!res.ok) throw new Error();
+      return (await res.json()) as { messages: Message[]; nextCursor: string | null; conversationId?: string | null };
+    },
+    [sessionId, router, toast]
+  );
+
+  // Initial load (and whenever we switch between main chat / a session).
+  const viewKey = sessionId ?? "main";
   useEffect(() => {
-    if (!activeId || freshIdRef.current === activeId) return;
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/conversations/${activeId}/messages`);
-        if (!res.ok) throw new Error();
-        const data = await res.json();
-        if (cancelled) return;
+        const data = await fetchPage(null);
+        if (cancelled || !data) return;
+        const convId = sessionId ?? data.conversationId ?? null;
+        activeIdRef.current = convId;
+        setActiveId(convId);
         setMessages(data.messages || []);
-        setTimeout(scrollToBottom, 50);
+        setNextCursor(data.nextCursor ?? null);
+        setTimeout(() => bottomRef.current?.scrollIntoView(), 30);
       } catch {
         if (!cancelled) setError("Couldn't load messages.");
       } finally {
-        if (!cancelled) setLoadedFor(activeId);
+        if (!cancelled) setLoadedFor(viewKey);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [activeId, scrollToBottom]);
+  }, [viewKey, sessionId, fetchPage]);
+
+  // Scrolling near the top loads the previous page — never the whole history.
+  async function loadOlder() {
+    if (!nextCursor || loadingOlder) return;
+    setLoadingOlder(true);
+    try {
+      const el = scrollRef.current;
+      const data = await fetchPage(nextCursor);
+      if (!data) return;
+      scrollAdjustRef.current = el ? el.scrollHeight - el.scrollTop : null;
+      setMessages((prev) => {
+        const seen = new Set(prev.map((m) => m.id));
+        return [...(data.messages || []).filter((m) => !seen.has(m.id)), ...prev];
+      });
+      setNextCursor(data.nextCursor ?? null);
+    } catch {
+      toast("Couldn't load earlier messages.", "error");
+    } finally {
+      setLoadingOlder(false);
+    }
+  }
+
+  // Keep the reading position steady when older messages are prepended.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (el && scrollAdjustRef.current !== null) {
+      el.scrollTop = el.scrollHeight - scrollAdjustRef.current;
+      scrollAdjustRef.current = null;
+    }
+  }, [messages]);
+
+  function handleScroll() {
+    const el = scrollRef.current;
+    if (el && el.scrollTop < 160 && nextCursor && !loadingOlder) void loadOlder();
+  }
 
   // Auto-grow the composer.
   useEffect(() => {
@@ -188,7 +306,7 @@ export default function ChatPage() {
     []
   );
 
-  const loadingMessages = !!activeId && loadedFor !== activeId;
+  const loadingMessages = loadedFor !== viewKey;
 
   // ── Batching ─────────────────────────────────────────────────────────────
 
@@ -197,9 +315,27 @@ export default function ChatPage() {
     timerRef.current = null;
   }
 
-  function scheduleFlush(delay = BATCH_WINDOW_MS) {
+  /** Is the user actively typing in the composer right now? */
+  function isTyping(now = nowMs()) {
+    return inputRef.current.trim().length > 0 && now - lastTypedAtRef.current < TYPING_ACTIVE_MS;
+  }
+
+  /** Adaptive quiet period: longer mid-thought / after short bursts, shorter after one finished message. */
+  function requiredQuietMs(now = nowMs()) {
+    return adaptiveWaitMs({ bubbles: queueRef.current.map((b) => b.content), typing: isTyping(now) });
+  }
+
+  function scheduleFlush(delay?: number) {
     clearTimer();
-    timerRef.current = setTimeout(() => tryFlush(), delay);
+    const now = nowMs();
+    const typing = isTyping(now);
+    setTypingNow(typing);
+    const wait =
+      delay ??
+      (typing
+        ? TYPING_RECHECK_MS
+        : Math.max(0, requiredQuietMs(now) - (now - Math.max(lastQueuedAtRef.current, lastTypedAtRef.current))));
+    timerRef.current = setTimeout(() => tryFlush(), wait);
   }
 
   function tryFlush(force = false) {
@@ -207,12 +343,16 @@ export default function ChatPage() {
     if (!queueRef.current.length || inFlightRef.current) return;
     if (!force) {
       const now = nowMs();
-      const typing = inputRef.current.trim().length > 0 && now - lastTypedAtRef.current < TYPING_GRACE_MS;
-      if (typing && now - firstQueuedAtRef.current < MAX_BATCH_WAIT_MS) {
-        scheduleFlush(800);
+      const typing = isTyping(now);
+      const sinceFirst = now - firstQueuedAtRef.current;
+      const ceiling = typing ? MAX_WAIT_TYPING_MS : MAX_WAIT_IDLE_MS;
+      const quietFor = now - Math.max(lastQueuedAtRef.current, lastTypedAtRef.current);
+      if (sinceFirst < ceiling && (typing || quietFor < requiredQuietMs(now))) {
+        scheduleFlush();
         return;
       }
     }
+    setTypingNow(false);
     void flushBatch();
   }
 
@@ -313,6 +453,12 @@ export default function ChatPage() {
         return;
       }
 
+      // The server may have rolled the endless chat into a fresh weekly session.
+      if (!sessionMode && data?.conversationId && data.conversationId !== activeIdRef.current) {
+        activeIdRef.current = data.conversationId;
+        setActiveId(data.conversationId);
+      }
+
       // Swap optimistic bubbles for the saved ones (same order).
       batch.forEach((b, i) => {
         if (userMessages[i]) tempToRealRef.current.set(b.tempId, userMessages[i].id);
@@ -328,14 +474,16 @@ export default function ChatPage() {
         }
         return out;
       });
-      void loadConversations();
-      if (!isActive()) return;
+      if (sessionMode) void loadConversations();
+      const deliveredTo = data?.conversationId ?? convId;
+      const stillHere = () => activeIdRef.current === deliveredTo || isActive();
+      if (!stillHere()) return;
 
       // Reveal Paddy's bubbles one by one, like someone texting back.
       for (let i = 0; i < assistantMessages.length; i++) {
         const m = assistantMessages[i];
         if (i > 0) await sleep(Math.min(1700, 500 + m.content.length * 18));
-        if (!isActive()) return;
+        if (!stillHere()) return;
         setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]));
         setTimeout(scrollToBottom, 40);
       }
@@ -359,8 +507,8 @@ export default function ChatPage() {
       return;
     }
 
-    let convId = activeId;
-    if (!convId) convId = await createConversation();
+    let convId = activeIdRef.current;
+    if (!convId) convId = await ensureCurrentConversation();
     if (!convId) return;
 
     // A batch for another conversation must go out before we start a new one.
@@ -374,6 +522,7 @@ export default function ChatPage() {
     setRetryBatch(null);
 
     if (!queueRef.current.length) firstQueuedAtRef.current = nowMs();
+    lastQueuedAtRef.current = nowMs();
     queueConvRef.current = convId;
     queueRef.current.push({ tempId, content, replyTo: quoted });
     setQueuedCount(queueRef.current.length);
@@ -438,38 +587,30 @@ export default function ChatPage() {
   }
 
   function selectConversation(id: string) {
-    if (id !== activeId) {
+    if (id !== sessionId) {
       if (queueRef.current.length) tryFlush(true);
-      freshIdRef.current = null;
       setMessages([]);
       resetComposerState();
+      router.replace(`/chat?session=${id}`);
     }
-    setActiveId(id);
     setSidebarOpen(false);
   }
 
-  async function createConversation(): Promise<string | null> {
+  /** The endless chat's current session id (the server creates/rotates it). */
+  async function ensureCurrentConversation(): Promise<string | null> {
     try {
-      if (queueRef.current.length) tryFlush(true);
-      const res = await fetch("/api/conversations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
+      const res = await fetch("/api/chat/timeline?limit=1", { cache: "no-store" });
+      if (res.status === 401) {
+        router.push("/sign-in");
+        return null;
+      }
       const data = await res.json();
-      if (!res.ok) throw new Error();
-      setConversations((prev) => [data.conversation, ...prev]);
-      freshIdRef.current = data.conversation.id;
-      activeIdRef.current = data.conversation.id;
-      setMessages([]);
-      resetComposerState();
-      setLoadedFor(data.conversation.id);
-      setActiveId(data.conversation.id);
-      setSidebarOpen(false);
-      setTimeout(() => textareaRef.current?.focus(), 50);
-      return data.conversation.id;
+      if (!res.ok || !data.conversationId) throw new Error();
+      activeIdRef.current = data.conversationId;
+      setActiveId(data.conversationId);
+      return data.conversationId as string;
     } catch {
-      toast("Couldn't start a new conversation.", "error");
+      toast("Couldn't reach Paddy — try again in a moment.", "error");
       return null;
     }
   }
@@ -482,11 +623,8 @@ export default function ChatPage() {
       return;
     }
     setConversations((prev) => prev.filter((c) => c.id !== id));
-    if (activeId === id) {
-      setActiveId(null);
-      setMessages([]);
-    }
     toast("Conversation deleted");
+    if (sessionId === id) router.replace("/memories#sessions");
   }
 
   // ── Composer ─────────────────────────────────────────────────────────────
@@ -503,14 +641,8 @@ export default function ChatPage() {
   function handleInput(value: string) {
     setInput(value);
     lastTypedAtRef.current = nowMs();
-    // Still typing → push the batch window back a little.
-    if (
-      queueRef.current.length &&
-      !inFlightRef.current &&
-      value.trim() &&
-      nowMs() - firstQueuedAtRef.current < MAX_BATCH_WAIT_MS
-    )
-      scheduleFlush();
+    // Still typing → Paddy keeps listening (adaptive, see tryFlush).
+    if (queueRef.current.length && !inFlightRef.current) scheduleFlush();
   }
 
   function startReply(m: Message) {
@@ -533,7 +665,8 @@ export default function ChatPage() {
 
   return (
     <div className="flex h-full overflow-hidden">
-      {/* Conversation list */}
+      {/* Sessions sidebar — only when browsing a past session (from Memories) */}
+      {sessionMode && (
       <aside
         className={cn(
           "fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-border bg-card transition-transform duration-200 md:static md:z-auto md:translate-x-0 md:bg-card/60",
@@ -543,10 +676,13 @@ export default function ChatPage() {
         aria-label="Conversations"
       >
         <div className="flex h-14 items-center gap-2 border-b border-border px-3">
-          <Button onClick={() => void createConversation()} size="sm" className="flex-1 gap-2">
-            <MessageSquarePlus className="h-4 w-4" />
-            New chat
-          </Button>
+          <Link
+            href="/chat"
+            className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-full bg-primary px-3 text-sm font-medium text-primary-foreground transition-all hover:-translate-y-px hover:shadow-md hover:shadow-primary/25"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to chat
+          </Link>
           <button
             type="button"
             className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary md:hidden"
@@ -571,7 +707,7 @@ export default function ChatPage() {
               key={c.id}
               className={cn(
                 "group flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm transition-colors",
-                activeId === c.id
+                sessionId === c.id
                   ? "bg-primary/10 text-foreground"
                   : "text-muted-foreground hover:bg-secondary hover:text-foreground"
               )}
@@ -580,11 +716,13 @@ export default function ChatPage() {
                 type="button"
                 className="flex min-w-0 flex-1 items-center gap-2 text-left"
                 onClick={() => selectConversation(c.id)}
-                aria-current={activeId === c.id ? "true" : undefined}
+                aria-current={sessionId === c.id ? "true" : undefined}
               >
-                <MessageCircle className={cn("h-4 w-4 shrink-0", activeId === c.id && "text-primary")} />
+                <MessageCircle className={cn("h-4 w-4 shrink-0", sessionId === c.id && "text-primary")} />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate">{c.title || "Conversation"}</span>
+                  <span className="block truncate">
+                    {c.isCurrent ? "This week" : c.title || "Conversation"}
+                  </span>
                   {c.lastMessageAt && (
                     <span className="block text-[11px] text-muted-foreground">
                       {formatRelativeTime(c.lastMessageAt)}
@@ -609,8 +747,9 @@ export default function ChatPage() {
           )}
         </div>
       </aside>
+      )}
 
-      {sidebarOpen && (
+      {sessionMode && sidebarOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px] md:hidden"
           onClick={() => setSidebarOpen(false)}
@@ -620,6 +759,7 @@ export default function ChatPage() {
 
       {/* Chat column — no secondary header; messages start right under the app nav */}
       <section className="relative flex min-w-0 flex-1 flex-col">
+        {sessionMode && (
         <button
           type="button"
           onClick={openSidebar}
@@ -632,18 +772,37 @@ export default function ChatPage() {
         >
           <PanelLeft className="h-[18px] w-[18px]" />
         </button>
+        )}
 
-        <div className="flex-1 overflow-y-auto">
-          <div className={cn("mx-auto max-w-3xl px-3 pb-6 sm:px-6", collapsed ? "pt-14" : "pt-14 md:pt-6")}>
-            {loadingMessages && messages.length === 0 && <Spinner label="Opening your conversation…" />}
+        <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto">
+          <div
+            className={cn(
+              "mx-auto max-w-3xl px-3 pb-6 sm:px-6",
+              !sessionMode ? "pt-4" : collapsed ? "pt-14" : "pt-14 md:pt-6"
+            )}
+          >
+            {loadingMessages && messages.length === 0 && (
+              <Spinner label={sessionMode ? "Opening your conversation…" : "Opening your chat…"} />
+            )}
+            {nextCursor && (
+              <div className="flex justify-center py-2">
+                <button
+                  type="button"
+                  onClick={() => void loadOlder()}
+                  disabled={loadingOlder}
+                  className="rounded-full px-3 py-1 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-60"
+                >
+                  {loadingOlder ? "Loading earlier messages…" : "Load earlier messages"}
+                </button>
+              </div>
+            )}
 
             {showWelcome && (
               <div className="animate-in flex flex-col items-center px-4 pt-6 text-center sm:pt-12">
                 <PaddyMark size={72} className="drop-shadow" />
                 <h2 className="mt-5 text-2xl font-semibold tracking-tight">Hey, I&apos;m here 💚</h2>
                 <p className="mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">
-                  Tell me what&apos;s on your mind — big or small. I&apos;ll remember the things that
-                  matter to you.
+                  What&apos;s on your mind?
                 </p>
                 <div className="mt-6 flex w-full max-w-md flex-col gap-2">
                   {STARTERS.map((s) => (
@@ -663,16 +822,26 @@ export default function ChatPage() {
             {messages.map((m, i) => {
               const prev = messages[i - 1];
               const next = messages[i + 1];
+              const newDay = !prev || dayKey(prev.createdAt) !== dayKey(m.createdAt);
+              const nextNewDay = !!next && dayKey(next.createdAt) !== dayKey(m.createdAt);
               return (
-                <MessageBubble
-                  key={m.id}
-                  message={m}
-                  firstInGroup={!prev || prev.role !== m.role}
-                  lastInGroup={!next || next.role !== m.role}
-                  highlighted={highlightId === m.id}
-                  onReply={startReply}
-                  onJumpTo={jumpTo}
-                />
+                <div key={m.id}>
+                  {newDay && (
+                    <div className="my-4 flex items-center justify-center" role="separator">
+                      <span className="rounded-full bg-secondary/70 px-3 py-0.5 text-[11px] font-medium text-muted-foreground">
+                        {dayLabel(m.createdAt, days?.today ?? null, days?.yesterday ?? null)}
+                      </span>
+                    </div>
+                  )}
+                  <MessageBubble
+                    message={m}
+                    firstInGroup={newDay || !prev || prev.role !== m.role}
+                    lastInGroup={nextNewDay || !next || next.role !== m.role}
+                    highlighted={highlightId === m.id}
+                    onReply={startReply}
+                    onJumpTo={jumpTo}
+                  />
+                </div>
               );
             })}
 
@@ -711,7 +880,7 @@ export default function ChatPage() {
                   <span className="h-1 w-1 animate-pulse rounded-full bg-primary [animation-delay:150ms]" />
                   <span className="h-1 w-1 animate-pulse rounded-full bg-primary [animation-delay:300ms]" />
                 </span>
-                Paddy will reply when you pause
+                {typingNow ? "Take your time — Paddy's listening" : "Paddy will reply when you pause"}
                 <button
                   type="button"
                   onClick={() => tryFlush(true)}

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser, clearSessionCookie } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
+import { eligibilityFor, toIsoDate, validateDob } from "@/lib/user/age";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -18,6 +19,9 @@ export async function GET() {
     emailVerifiedAt: user.emailVerifiedAt,
     timezone: user.timezone,
     preferredLanguage: user.preferredLanguage,
+    dateOfBirth: toIsoDate(user.dateOfBirth),
+    ageEligibilityStatus: user.ageEligibilityStatus ?? "unknown",
+    dobPromptedAt: user.dobPromptedAt,
     profile: user.profile,
     companionPreferences: user.companionPreferences,
     notificationPreferences: user.notificationPreferences,
@@ -33,6 +37,10 @@ const patchSchema = z.object({
     .optional(),
   proactiveEnabled: z.boolean().optional(),
   personalIntroduction: z.string().max(500).optional(),
+  /** "YYYY-MM-DD" from the Paddy date picker. */
+  dateOfBirth: z.string().max(10).optional(),
+  /** User tapped "Not now" on the birthday prompt. */
+  dobSkipped: z.literal(true).optional(),
 });
 
 export async function PATCH(req: NextRequest) {
@@ -48,6 +56,48 @@ export async function PATCH(req: NextRequest) {
   }
 
   const data = parsed.data;
+
+  let eligibility = user.ageEligibilityStatus ?? "unknown";
+  if (data.dateOfBirth !== undefined && user.dateOfBirth && toIsoDate(user.dateOfBirth) !== data.dateOfBirth) {
+    // Set once — otherwise the age gate would be trivially bypassable.
+    return NextResponse.json(
+      { error: "Your birthday is already set. Contact support to change it." },
+      { status: 409 }
+    );
+  }
+  if (data.dateOfBirth !== undefined) {
+    const checked = validateDob(data.dateOfBirth);
+    if (!checked.ok) {
+      return NextResponse.json({ error: checked.error }, { status: 400 });
+    }
+    eligibility = eligibilityFor(checked.date);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { dateOfBirth: checked.date, ageEligibilityStatus: eligibility, dobPromptedAt: new Date() },
+    });
+    if (eligibility !== "verified_adult") {
+      // Romantic & flirting are for verified adults only (blueprint §4).
+      await prisma.companionPreferences.updateMany({
+        where: { userId: user.id, relationshipStyle: "romantic" },
+        data: { relationshipStyle: "friend" },
+      });
+      await prisma.companionPreferences.updateMany({
+        where: { userId: user.id },
+        data: { flirtingEnabled: false },
+      });
+    }
+  } else if (data.dobSkipped) {
+    await prisma.user.update({ where: { id: user.id }, data: { dobPromptedAt: new Date() } });
+  }
+
+  const alreadyRomantic =
+    eligibility !== "underage" && user.companionPreferences?.relationshipStyle === "romantic";
+  if (data.relationshipStyle === "romantic" && eligibility !== "verified_adult" && !alreadyRomantic) {
+    return NextResponse.json(
+      { error: "Add your birthday to unlock romantic — it's for adults only." },
+      { status: 403 }
+    );
+  }
 
   if (data.displayName || data.preferredName || data.personalIntroduction) {
     await prisma.userProfile.upsert({
@@ -97,5 +147,5 @@ export async function PATCH(req: NextRequest) {
     });
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, ageEligibilityStatus: eligibility });
 }

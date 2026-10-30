@@ -82,24 +82,58 @@ export function renderChallengeEmail(input: {
   ].join("\n");
 
   const p = escapeHtml(input.phrase);
+  const logo = escapeHtml(`${base}/icon-192.png`);
+  const home = escapeHtml(base);
+  const preheader = escapeHtml(`Your Paddy phrase is inside — expires in ${input.expiresInMinutes} minutes.`);
+  const font = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
   const html = `<!doctype html>
-<html><body style="margin:0;background:#f5f5f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1c1917">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:32px 12px"><tr><td align="center">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border-radius:16px;padding:32px">
-<tr><td>
-<p style="margin:0 0 8px;font-size:22px;font-weight:700;color:#0f766e">Paddy 💚</p>
-<p style="margin:16px 0 4px;font-size:16px">${escapeHtml(hi)}</p>
-<p style="margin:0 0 24px;font-size:16px;line-height:1.5">${escapeHtml(c.intro)}</p>
-<p style="margin:0 0 6px;font-size:11px;letter-spacing:.12em;font-weight:700;color:#78716c">YOUR PADDY PHRASE</p>
-<div style="background:#f0fdfa;border:1px solid #99f6e4;border-radius:12px;padding:16px 18px;font-size:18px;font-weight:600;color:#134e4a;user-select:all;-webkit-user-select:all">${p}</div>
-<p style="margin:28px 0 12px" align="center">
-<a href="${escapeHtml(actionUrl)}" style="display:inline-block;background:#0f766e;color:#ffffff;text-decoration:none;font-weight:600;padding:14px 28px;border-radius:999px">${escapeHtml(c.button)}</a>
-</p>
-<p style="margin:0 0 24px" align="center">
-<a href="${escapeHtml(copyUrl)}" style="color:#0f766e;font-weight:600;text-decoration:underline">Copy my secret phrase</a>
-</p>
-<p style="margin:0;font-size:13px;line-height:1.5;color:#78716c">This little secret expires in ${input.expiresInMinutes} minutes and works once. Paddy will never ask you to share it with anyone. If you didn't request this, you can safely ignore this email.</p>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light only"><meta name="supported-color-schemes" content="light">
+<title>${escapeHtml(CHALLENGE_SUBJECT)}</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f2ef;font-family:${font};color:#1c1917;-webkit-font-smoothing:antialiased">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent">${preheader}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f2ef;padding:36px 12px">
+<tr><td align="center">
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:460px">
+<tr><td align="center" style="padding:0 0 20px">
+<a href="${home}" style="text-decoration:none;color:#1c1917">
+<img src="${logo}" width="44" height="44" alt="Paddy" style="display:block;margin:0 auto 10px;width:44px;height:44px;border:0;border-radius:12px">
+<span style="font-size:15px;font-weight:600;letter-spacing:-.01em;color:#1c1917">Paddy</span>
+</a>
+</td></tr>
+
+<tr><td style="background:#ffffff;border-radius:20px;border:1px solid #ece9e4;overflow:hidden">
+<div style="height:4px;background:#0f766e;background-image:linear-gradient(90deg,#2dd4bf,#0f766e);border-radius:20px 20px 0 0;line-height:4px;font-size:0">&nbsp;</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="padding:30px 30px 28px">
+<p style="margin:0 0 6px;font-size:15px;color:#57534e">${escapeHtml(hi)}</p>
+<p style="margin:0 0 22px;font-size:16px;line-height:1.55;color:#1c1917">${escapeHtml(c.intro)}</p>
+
+<p style="margin:0 0 8px;font-size:11px;letter-spacing:.1em;font-weight:600;color:#78716c;text-transform:uppercase">Your Paddy phrase</p>
+<div style="background:#f0fdfa;border:1px solid #ccfbf1;border-radius:14px;padding:16px 18px;font-size:19px;line-height:1.4;font-weight:600;color:#134e4a;text-align:center;letter-spacing:.01em;user-select:all;-webkit-user-select:all">${p}</div>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:26px 0 0"><tr><td align="center">
+<a href="${escapeHtml(actionUrl)}" style="display:inline-block;background:#0f766e;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;padding:13px 30px;border-radius:999px">${escapeHtml(c.button)}</a>
+</td></tr>
+<tr><td align="center" style="padding:14px 0 0">
+<a href="${escapeHtml(copyUrl)}" style="font-size:14px;color:#0f766e;font-weight:500;text-decoration:none">Copy my secret phrase &rarr;</a>
 </td></tr></table>
+
+<div style="margin:26px 0 0;padding:14px 0 0;border-top:1px solid #f0ede8">
+<p style="margin:0;font-size:13px;line-height:1.55;color:#78716c">&#9203; Expires in <strong style="color:#57534e;font-weight:600">${input.expiresInMinutes} minutes</strong> and works once.</p>
+<p style="margin:6px 0 0;font-size:13px;line-height:1.55;color:#78716c">Paddy will never ask you to share it with anyone. If you didn't request this, you can safely ignore this email.</p>
+</div>
+</td></tr></table>
+</td></tr>
+
+<tr><td align="center" style="padding:20px 12px 0;font-size:12px;line-height:1.5;color:#a8a29e">
+Sent by Paddy &middot; your AI companion<br>
+<a href="${home}" style="color:#a8a29e;text-decoration:underline">${escapeHtml(base.replace(/^https?:\/\//, ""))}</a>
+</td></tr>
+</table>
+
 </td></tr></table>
 </body></html>`;
 
