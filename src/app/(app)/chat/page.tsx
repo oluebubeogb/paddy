@@ -900,7 +900,7 @@ function ChatView() {
                 e.preventDefault();
                 void enqueue();
               }}
-              className="rounded-3xl border border-input bg-card shadow-sm transition-shadow focus-within:border-primary/50 focus-within:ring-4 focus-within:ring-primary/15"
+              className="rounded-3xl border border-input bg-card shadow-sm"
             >
               {replyTarget && (
                 <div className="animate-in flex items-start gap-2 px-2 pt-2">
