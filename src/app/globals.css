@@ -125,6 +125,14 @@ body {
   outline-offset: 2px;
 }
 
+/* Chat composer: no green focus rectangle while typing */
+#composer:focus,
+#composer:focus-visible,
+form:has(#composer):focus-within {
+  outline: none !important;
+  box-shadow: none;
+}
+
 /* ---------- Paddy polish ---------- */
 
 .glass {

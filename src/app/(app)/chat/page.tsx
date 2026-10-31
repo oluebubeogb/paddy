@@ -900,7 +900,7 @@ function ChatView() {
                 e.preventDefault();
                 void enqueue();
               }}
-              className="rounded-3xl border border-input bg-card shadow-sm"
+              className="rounded-3xl border border-input bg-card shadow-sm outline-none focus-within:outline-none focus-within:ring-0"
             >
               {replyTarget && (
                 <div className="animate-in flex items-start gap-2 px-2 pt-2">
@@ -935,7 +935,7 @@ function ChatView() {
                   onKeyDown={handleKeyDown}
                   placeholder="Message Paddy…"
                   rows={1}
-                  className="max-h-40 flex-1 resize-none bg-transparent py-2 text-[15px] placeholder:text-muted-foreground focus:outline-none focus-visible:outline-none"
+                  className="max-h-40 flex-1 resize-none bg-transparent py-2 text-[15px] placeholder:text-muted-foreground outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
                 />
                 <button
                   type="submit"
