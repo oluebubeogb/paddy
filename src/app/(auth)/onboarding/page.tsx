@@ -39,6 +39,11 @@ export default function OnboardingPage() {
   const [error, setError] = useState("");
 
   async function finish() {
+    if (!dob || tooYoung) {
+      setStep(1);
+      setError("Add your birthday to continue.");
+      return;
+    }
     setLoading(true);
     setError("");
     try {
@@ -51,7 +56,7 @@ export default function OnboardingPage() {
           timezone,
           relationshipStyle: relationshipStyle === "romantic" && !isAdult ? "friend" : relationshipStyle,
           proactiveEnabled,
-          ...(dob ? { dateOfBirth: dob } : { dobSkipped: true }),
+          dateOfBirth: dob,
         }),
       });
       if (!res.ok) {
@@ -106,7 +111,7 @@ export default function OnboardingPage() {
           className="space-y-4"
           onSubmit={(e) => {
             e.preventDefault();
-            if (displayName.trim() && !tooYoung) setStep(2);
+            if (displayName.trim() && dob && !tooYoung) setStep(2);
           }}
         >
           <div>
@@ -131,7 +136,6 @@ export default function OnboardingPage() {
           <div>
             <div className="mb-1.5 flex items-center gap-1 text-xs font-medium text-muted-foreground">
               <label htmlFor="dob">Birthday</label>
-              <span className="font-normal">(optional)</span>
               <InfoTip label="Why Paddy asks for your birthday">
                 Paddy is for ages 13+, and romantic mode is 18+ only. Used for that and birthday wishes — never shown
                 to anyone.
@@ -148,7 +152,7 @@ export default function OnboardingPage() {
             <FieldLabel htmlFor="timezone">Time zone</FieldLabel>
             <Input id="timezone" value={timezone} onChange={(e) => setTimezone(e.target.value)} />
           </div>
-          <Button type="submit" className="w-full gap-2" size="lg" disabled={!displayName.trim() || tooYoung}>
+          <Button type="submit" className="w-full gap-2" size="lg" disabled={!displayName.trim() || !dob || tooYoung}>
             Continue <ArrowRight className="h-4 w-4" />
           </Button>
         </form>

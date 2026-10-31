@@ -22,6 +22,12 @@ x-app-env: &app-env
   # RunPod cold starts can be slow; Paddy reports a timeout instead of "offline".
   AI_TIMEOUT_MS: ${AI_TIMEOUT_MS:-120000}
   AI_MAX_RETRIES: ${AI_MAX_RETRIES:-1}
+  # 502-504 retries can double-bill RunPod; opt in with true.
+  AI_RETRY_HTTP: ${AI_RETRY_HTTP:-false}
+  # Memory extraction runs in the worker once a chat goes quiet (never per message).
+  MEMORY_EXTRACTION: ${MEMORY_EXTRACTION:-idle}
+  MEMORY_IDLE_MINUTES: ${MEMORY_IDLE_MINUTES:-10}
+  MEMORY_MIN_USER_MESSAGES: ${MEMORY_MIN_USER_MESSAGES:-3}
   VAPID_SUBJECT: ${VAPID_SUBJECT:-}
   VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
   VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}

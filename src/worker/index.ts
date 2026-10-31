@@ -13,7 +13,8 @@
 import { prisma } from "@/lib/db";
 import { findDueFollowUps } from "@/lib/proactive/follow-ups";
 import { processFollowUp } from "@/lib/proactive/deliver";
-import { processConversationMemories } from "@/lib/memory/process";
+import { lastExtractionAt, processConversationMemories } from "@/lib/memory/process";
+import { memoryDecision, memorySchedule } from "@/lib/memory/schedule";
 
 const POLL_INTERVAL_MS = Number(process.env.WORKER_POLL_MS || 15_000);
 const MAX_FOLLOW_UPS_PER_TICK = 10;
@@ -43,27 +44,56 @@ async function processDueFollowUps() {
   }
 }
 
+/**
+ * Memory extraction is one AI call per conversation *burst*, not per chat turn:
+ * a pending job waits until the conversation has been quiet for MEMORY_IDLE_MINUTES
+ * and has enough new user messages (see lib/memory/schedule.ts).
+ */
 async function processPendingMemoryJobs() {
+  const schedule = memorySchedule();
+  const now = Date.now();
   const jobs = await prisma.memoryProcessingJob.findMany({
-    where: { status: "pending" },
+    where: {
+      status: "pending",
+      ...(schedule.mode === "off"
+        ? {}
+        : { conversation: { lastMessageAt: { lt: new Date(now - schedule.idleMs) } } }),
+    },
     orderBy: { createdAt: "asc" },
     take: MAX_MEMORY_JOBS_PER_TICK,
+    include: { conversation: { select: { lastMessageAt: true } } },
   });
 
   for (const job of jobs) {
     if (shuttingDown) break;
     try {
-      // Mark processing to avoid double-pickup
-      await prisma.memoryProcessingJob.update({
-        where: { id: job.id },
+      const since = await lastExtractionAt(job.conversationId);
+      const newUserMessages = await prisma.message.count({
+        where: {
+          conversationId: job.conversationId,
+          role: "user",
+          ...(since ? { createdAt: { gt: since } } : {}),
+        },
+      });
+      const quietForMs = now - (job.conversation.lastMessageAt?.getTime() ?? job.createdAt.getTime());
+      const decision = memoryDecision({ quietForMs, newUserMessages }, schedule);
+      if (decision === "wait") continue;
+      if (decision === "skip") {
+        await prisma.memoryProcessingJob.update({
+          where: { id: job.id },
+          data: { status: "skipped", completedAt: new Date() },
+        });
+        continue;
+      }
+
+      // Claim atomically to avoid double pickup by a second worker.
+      const claimed = await prisma.memoryProcessingJob.updateMany({
+        where: { id: job.id, status: "pending" },
         data: { status: "processing", attemptCount: { increment: 1 } },
       });
-      // processConversationMemories creates its own job record;
-      // for pending external jobs we process the conversation directly
-      const result = await processConversationMemories(
-        job.userId,
-        job.conversationId
-      );
+      if (!claimed.count) continue;
+
+      const result = await processConversationMemories(job.userId, job.conversationId, job.id);
       console.log(
         `[worker] memory job ${job.id}: ${result.memoriesStored} memories, ${result.eventsStored} events`
       );

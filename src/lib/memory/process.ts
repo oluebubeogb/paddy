@@ -1,6 +1,10 @@
 /**
  * Memory processing pipeline.
- * Runs after conversation checkpoints — does not block chat responses.
+ *
+ * Billing note: extraction is its own AI call. It is NEVER run inline per chat
+ * turn — the chat route only records a pending job (a DB row, no AI), and the
+ * worker runs extraction once per conversation burst after the user goes quiet
+ * (see ./schedule.ts). A chat turn therefore costs exactly one provider call.
  */
 
 import { prisma } from "@/lib/db";
@@ -8,37 +12,55 @@ import { extractFromMessages } from "./extract";
 import { persistMemories } from "./store";
 import { persistEvents } from "@/lib/life/events";
 import { createFollowUpFromProposal } from "@/lib/proactive/follow-ups";
+import { memorySchedule } from "./schedule";
+
+/** When the conversation's memories were last extracted (null = never). */
+export async function lastExtractionAt(conversationId: string): Promise<Date | null> {
+  const last = await prisma.memoryProcessingJob.findFirst({
+    where: { conversationId, status: "completed", completedAt: { not: null } },
+    orderBy: { completedAt: "desc" },
+    select: { completedAt: true },
+  });
+  return last?.completedAt ?? null;
+}
 
 /**
- * Process a conversation for memories, events, and follow-up proposals.
- * Creates a durable job record so work is not lost.
+ * Extract memories, events, and follow-up proposals from the conversation's
+ * messages since the last extraction (one AI call).
+ * @param jobId an existing job row to update; otherwise one is created.
  */
 export async function processConversationMemories(
   userId: string,
-  conversationId: string
+  conversationId: string,
+  jobId?: string
 ): Promise<{
   memoriesStored: number;
   eventsStored: number;
   followUpsCreated: number;
 }> {
-  // Create or reuse a processing job record
-  const job = await prisma.memoryProcessingJob.create({
-    data: {
-      userId,
-      conversationId,
-      status: "processing",
-    },
-  });
+  const since = await lastExtractionAt(conversationId);
+  const job = jobId
+    ? await prisma.memoryProcessingJob.update({ where: { id: jobId }, data: { status: "processing" } })
+    : await prisma.memoryProcessingJob.create({
+        data: { userId, conversationId, status: "processing" },
+      });
 
   try {
-    const messages = await prisma.message.findMany({
-      where: { conversationId },
-      orderBy: { createdAt: "asc" },
-      take: 40,
-      select: { id: true, role: true, content: true },
-    });
+    // Latest 40 messages since the last extraction (not the first 40 ever).
+    const messages = (
+      await prisma.message.findMany({
+        where: {
+          conversationId,
+          role: { in: ["user", "assistant"] },
+          ...(since ? { createdAt: { gt: since } } : {}),
+        },
+        orderBy: { createdAt: "desc" },
+        take: 40,
+        select: { id: true, role: true, content: true },
+      })
+    ).reverse();
 
-    if (messages.length < 2) {
+    if (messages.length < 2 || !messages.some((m) => m.role === "user")) {
       await prisma.memoryProcessingJob.update({
         where: { id: job.id },
         data: { status: "completed", completedAt: new Date() },
@@ -96,15 +118,29 @@ export async function processConversationMemories(
 }
 
 /**
- * Enqueue memory processing without blocking the request.
- * In Phase 2 without Redis yet, runs fire-and-forget; worker will pick up pending jobs.
+ * Mark a conversation as needing memory extraction. No AI call here — just a
+ * pending job row (deduplicated per conversation) for the worker to pick up
+ * once the user goes quiet.
  */
-export function enqueueMemoryProcessing(
-  userId: string,
-  conversationId: string
-): void {
-  // Fire-and-forget; errors logged inside
-  processConversationMemories(userId, conversationId).catch((err) => {
-    console.error("Background memory processing error", err);
+export function enqueueMemoryProcessing(userId: string, conversationId: string): void {
+  if (memorySchedule().mode === "off") return;
+  (async () => {
+    const existing = await prisma.memoryProcessingJob.findFirst({
+      where: {
+        conversationId,
+        OR: [
+          { status: "pending" },
+          // A job stuck in "processing" (crashed worker) shouldn't block new ones forever.
+          { status: "processing", createdAt: { gt: new Date(Date.now() - 60 * 60_000) } },
+        ],
+      },
+      select: { id: true },
+    });
+    if (existing) return;
+    await prisma.memoryProcessingJob.create({
+      data: { userId, conversationId, status: "pending" },
+    });
+  })().catch((err) => {
+    console.error("Could not queue memory processing", err);
   });
 }

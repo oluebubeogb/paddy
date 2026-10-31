@@ -4,7 +4,16 @@
 
 import { aiProvider, type ChatMessage } from "@/lib/ai/provider";
 import type { User, UserProfile, CompanionPreferences } from "@prisma/client";
-import { BUBBLE_DELIMITER, BUBBLE_FORMAT_PROMPT, splitReply, type ReplyBubble } from "./bubbles";
+import {
+  BUBBLE_DELIMITER,
+  BUBBLE_FORMAT_PROMPT,
+  batchToBubbles,
+  bubbleBudget,
+  bubbleBudgetHint,
+  splitReply,
+  type BubbleBudget,
+  type ReplyBubble,
+} from "./bubbles";
 import { analyzeTextingStyle, applyTextingStyle, buildTextingStylePrompt, type TextingStyle } from "./texting-style";
 
 const CORE_SYSTEM_PROMPT = `You are Paddy, the user's personal AI companion. You are warm, curious, conversational, and attentive to the user's preferences. Your purpose is to provide companionship, thoughtful advice, useful guidance, and continuity across conversations.
@@ -31,6 +40,13 @@ export interface CompanionContext {
   recentMessages: { role: string; content: string }[];
   relevantMemories?: { category: string; content: string }[];
   currentMessage: string;
+  /** The user's individual bubbles in this turn (defaults to parsing `currentMessage`). */
+  userBubbles?: string[];
+}
+
+/** Adaptive bubble budget for this turn — decided from what the user just sent. */
+export function bubbleBudgetFor(ctx: CompanionContext): BubbleBudget {
+  return bubbleBudget(ctx.userBubbles?.length ? ctx.userBubbles : batchToBubbles(ctx.currentMessage));
 }
 
 /** How this user texts, read from their recent messages + the current one. */
@@ -93,6 +109,9 @@ export function buildSystemPrompt(ctx: CompanionContext): string {
     sections.push(`\n## Relevant Memories\n${memText}`);
   }
 
+  // Per-turn bubble budget goes last so the stable prefix above stays cache-friendly.
+  sections.push("\n" + bubbleBudgetHint(bubbleBudgetFor(ctx)));
+
   return sections.join("\n");
 }
 
@@ -138,23 +157,30 @@ export async function generateCompanionResponse(
 }
 
 /**
- * ONE provider call → several chat bubbles (split locally, never re-requested).
+ * EXACTLY ONE provider call → 1..N chat bubbles. The single reply is split
+ * locally (delimiter / paragraphs / sentences) under an adaptive budget —
+ * bubbles are never generated or re-requested one at a time.
  * @param batchSize how many user bubbles the current message bundles (for [reply:N]).
  */
 export async function generateCompanionBubbles(
   ctx: CompanionContext,
   batchSize = 1
-): Promise<{ raw: string; bubbles: ReplyBubble[] }> {
+): Promise<{ raw: string; bubbles: ReplyBubble[]; budget: BubbleBudget }> {
+  const budget = bubbleBudgetFor(ctx);
   const raw = await generateCompanionResponse(ctx);
-  const style = textingStyleFor(ctx);
-  const bubbles = splitReply(raw, batchSize)
-    .map((b) => ({ ...b, text: applyTextingStyle(b.text, style) }))
-    .filter((b) => b.text.length > 0);
-  return { raw, bubbles: bubbles.length ? bubbles : splitReply(raw, batchSize) };
+  return { raw, bubbles: bubblesFromReply(raw, ctx, batchSize, budget), budget };
 }
 
-export async function* generateCompanionResponseStream(
-  ctx: CompanionContext
-): AsyncGenerator<string, void, unknown> {
-  yield* aiProvider.chatStream({ messages: buildChatMessages(ctx) });
+/** Pure: one model reply → styled bubbles for this turn. */
+export function bubblesFromReply(
+  raw: string,
+  ctx: CompanionContext,
+  batchSize = 1,
+  budget: BubbleBudget = bubbleBudgetFor(ctx)
+): ReplyBubble[] {
+  const style = textingStyleFor(ctx);
+  const bubbles = splitReply(raw, batchSize, budget)
+    .map((b) => ({ ...b, text: applyTextingStyle(b.text, style) }))
+    .filter((b) => b.text.length > 0);
+  return bubbles.length ? bubbles : splitReply(raw, batchSize, budget);
 }

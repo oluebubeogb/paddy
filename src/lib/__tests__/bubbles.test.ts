@@ -37,10 +37,10 @@ test("splitReply keeps short replies as one bubble and handles paragraphs / JSON
   assert.deepEqual(splitReply('["a", {"text":"b","replyTo":1}]', 2), [{ text: "a" }, { text: "b", replyTo: 1 }]);
 });
 
-test("splitReply caps the number of bubbles", () => {
+test("splitReply caps the number of bubbles by merging, never dropping text", () => {
   const out = splitReply("1|||2|||3|||4|||5|||6", 1);
   assert.equal(out.length, MAX_BUBBLES);
-  assert.equal(out[MAX_BUBBLES - 1].text, "4\n\n5\n\n6");
+  assert.equal(out.map((b) => b.text).join(" "), "1 2 3 4 5 6");
 });
 
 test("formatUserBatch numbers multiple bubbles and includes quotes", () => {

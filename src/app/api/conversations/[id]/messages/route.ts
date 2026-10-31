@@ -73,6 +73,14 @@ export async function POST(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Birthday is required before chatting (age gate: 13+, romantic 18+).
+  if (!user.dateOfBirth) {
+    return NextResponse.json(
+      { error: "Add your birthday to start chatting.", code: "dob_required" },
+      { status: 403 }
+    );
+  }
+
   const { id } = await params;
   const body = await req.json().catch(() => null);
   const parsed = postSchema.safeParse(body);
@@ -220,6 +228,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         recentMessages,
         relevantMemories,
         currentMessage: formatUserBatch(batch),
+        userBubbles: batch.map((b) => b.content),
       },
       batch.length
     );

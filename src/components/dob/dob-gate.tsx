@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { FormError } from "@/components/auth/auth-shell";
@@ -9,18 +9,17 @@ import { InfoTip } from "@/components/ui/info-tip";
 import { useToast } from "@/components/ui/toast";
 import { DobPicker, ageFromIso, defaultDob, formatDob } from "@/components/dob/dob-picker";
 
-const SKIP_KEY = "paddy.dob.skipped";
-/** After "Not now", ask again at most once a week. */
-const REASK_MS = 7 * 24 * 60 * 60 * 1000;
+/** Fired (e.g. by the chat page) when the server says a birthday is required. */
+export const DOB_REQUIRED_EVENT = "paddy:dob-required";
 
 interface Me {
   dateOfBirth: string | null;
-  dobPromptedAt: string | null;
 }
 
 /**
- * Asks for a date of birth on first login, in a Paddy-styled sheet.
- * Never blocks: "Not now" (or Esc) dismisses it, and it waits a week before asking again.
+ * Required date-of-birth gate. If the signed-in user has no birthday on file,
+ * a Paddy-styled sheet covers the app until one is saved — no "Not now", no Esc,
+ * no backdrop dismiss. The server enforces the same rule on chat.
  */
 export function DobGate() {
   const pathname = usePathname();
@@ -30,57 +29,36 @@ export function DobGate() {
   const [touched, setTouched] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const checked = useRef(false);
+
+  const check = useCallback(async (attempt = 0): Promise<void> => {
+    try {
+      const res = await fetch("/api/me", { cache: "no-store" });
+      if (res.status === 401) return; // signed out — the proxy handles it
+      if (!res.ok) throw new Error(String(res.status));
+      const me = (await res.json()) as Me;
+      setOpen(!me.dateOfBirth);
+    } catch {
+      // Transient failure: retry a few times rather than silently letting it slide.
+      if (attempt < 3) setTimeout(() => void check(attempt + 1), 1500 * (attempt + 1));
+    }
+  }, []);
 
   useEffect(() => {
-    if (checked.current) return;
-    checked.current = true;
-    try {
-      if (sessionStorage.getItem(SKIP_KEY)) return;
-    } catch {
-      /* storage blocked — still fine to ask */
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/me", { cache: "no-store" });
-        if (!res.ok) return;
-        const me = (await res.json()) as Me;
-        if (cancelled || me.dateOfBirth) return;
-        const promptedAt = me.dobPromptedAt ? new Date(me.dobPromptedAt).getTime() : 0;
-        if (promptedAt && Date.now() - promptedAt < REASK_MS) return;
-        setOpen(true);
-      } catch {
-        /* never block the app on this */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    void check();
+    const onRequired = () => setOpen(true);
+    window.addEventListener(DOB_REQUIRED_EVENT, onRequired);
+    return () => window.removeEventListener(DOB_REQUIRED_EVENT, onRequired);
+  }, [check]);
 
-  const dismiss = useCallback(() => {
-    setOpen(false);
-    try {
-      sessionStorage.setItem(SKIP_KEY, "1");
-    } catch {
-      /* ignore */
-    }
-    void fetch("/api/me", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dobSkipped: true }),
-    }).catch(() => {});
-  }, []);
-
+  // Lock background scroll while the gate is up.
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") dismiss();
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, dismiss]);
+  }, [open]);
 
   async function save() {
     setSaving(true);
@@ -105,16 +83,15 @@ export function DobGate() {
     }
   }
 
+  // Onboarding has its own (required) birthday field.
   if (!open || pathname?.startsWith("/onboarding")) return null;
   const age = ageFromIso(value);
 
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center" role="presentation">
-      <button
-        type="button"
-        aria-label="Not now"
-        onClick={dismiss}
-        className="absolute inset-0 bg-black/30 backdrop-blur-[2px]"
+      <div
+        aria-hidden
+        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
         style={{ animation: "paddy-in 0.2s ease-out both" }}
       />
       <div
@@ -129,10 +106,10 @@ export function DobGate() {
             When&apos;s your birthday?
           </h2>
           <p className="mt-1 inline-flex items-center gap-1 text-sm text-muted-foreground">
-            So Paddy can celebrate with you.
+            One quick thing before we chat.
             <InfoTip label="Why Paddy asks" side="bottom">
               Paddy is for ages 13+, and romantic mode is 18+ only. Your birthday is only used for that and for
-              birthday wishes — never shown to anyone.
+              birthday wishes — never shown to anyone. It can only be set once.
             </InfoTip>
           </p>
         </div>
@@ -154,13 +131,6 @@ export function DobGate() {
           <Button className="w-full" size="lg" onClick={() => void save()} disabled={saving || !touched}>
             {saving ? "Saving…" : "Save birthday"}
           </Button>
-          <button
-            type="button"
-            onClick={dismiss}
-            className="w-full text-center text-sm text-muted-foreground hover:text-foreground"
-          >
-            Not now
-          </button>
         </div>
       </div>
     </div>

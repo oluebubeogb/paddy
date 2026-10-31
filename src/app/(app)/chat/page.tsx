@@ -23,6 +23,7 @@ import {
   type ChatBubbleMessage,
   type QuotedMessage,
 } from "@/components/chat/message-bubble";
+import { DOB_REQUIRED_EVENT } from "@/components/dob/dob-gate";
 import { Spinner } from "@/components/app/app-shell";
 import { useToast } from "@/components/ui/toast";
 import { cn, formatRelativeTime } from "@/lib/utils";
@@ -435,7 +436,10 @@ function ChatView() {
       const userMessages: Message[] = data?.userMessages ?? (data?.userMessage ? [data.userMessage] : []);
 
       if (!res.ok || !assistantMessages.length) {
-        if (res.status === 429) {
+        if (res.status === 403 && data?.code === "dob_required") {
+          window.dispatchEvent(new Event(DOB_REQUIRED_EVENT));
+          fail(data.error || "Add your birthday to start chatting.");
+        } else if (res.status === 429) {
           fail(data?.error || "You're sending messages quickly — give it a moment and try again.");
         } else if (res.status === 504) {
           fail(

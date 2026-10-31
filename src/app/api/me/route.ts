@@ -39,8 +39,6 @@ const patchSchema = z.object({
   personalIntroduction: z.string().max(500).optional(),
   /** "YYYY-MM-DD" from the Paddy date picker. */
   dateOfBirth: z.string().max(10).optional(),
-  /** User tapped "Not now" on the birthday prompt. */
-  dobSkipped: z.literal(true).optional(),
 });
 
 export async function PATCH(req: NextRequest) {
@@ -86,8 +84,6 @@ export async function PATCH(req: NextRequest) {
         data: { flirtingEnabled: false },
       });
     }
-  } else if (data.dobSkipped) {
-    await prisma.user.update({ where: { id: user.id }, data: { dobPromptedAt: new Date() } });
   }
 
   const alreadyRomantic =

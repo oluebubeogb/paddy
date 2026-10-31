@@ -96,6 +96,8 @@ function stripReasoning(text: string): string {
 }
 
 const RETRYABLE_STATUS = new Set([502, 503, 504]);
+const PRECONNECT_CODES = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "EHOSTUNREACH", "ENETUNREACH", "UND_ERR_CONNECT_TIMEOUT"]);
+const retryHttp = () => /^(1|true|yes)$/i.test((process.env.AI_RETRY_HTTP || "").trim());
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export class AIProvider {
@@ -170,10 +172,13 @@ export class AIProvider {
           attempt,
           elapsedMs: Date.now() - started,
         });
-        if (!RETRYABLE_STATUS.has(response.status)) throw lastErr;
+        // A 5xx from RunPod can arrive AFTER the job ran (and was billed), so
+        // HTTP retries are opt-in (AI_RETRY_HTTP=true). Connection failures —
+        // where the request never reached the provider — are still retried.
+        if (!retryHttp() || !RETRYABLE_STATUS.has(response.status)) throw lastErr;
       } catch (err) {
         if (err instanceof AIProviderError) {
-          if (err.kind !== "http" || !RETRYABLE_STATUS.has(err.details.status ?? 0)) throw err;
+          if (err.kind !== "http" || !retryHttp() || !RETRYABLE_STATUS.has(err.details.status ?? 0)) throw err;
         } else {
           const e = err as Error & { cause?: { code?: string; message?: string } };
           const isTimeout = e?.name === "TimeoutError" || e?.name === "AbortError";
@@ -185,6 +190,8 @@ export class AIProvider {
             { url, model, attempt, elapsedMs: Date.now() - started }
           );
           if (isTimeout) throw lastErr;
+          // Only retry when the request certainly never reached the provider.
+          if (!PRECONNECT_CODES.has(e?.cause?.code ?? "")) throw lastErr;
         }
       }
       if (attempt < maxAttempts) {
