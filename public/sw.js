@@ -7,7 +7,7 @@
  *  - /_next/static/* (content-hashed) and icons: cache-first.
  */
 
-const VERSION = "paddy-v2";
+const VERSION = "paddy-v3";
 const STATIC_CACHE = `${VERSION}-static`;
 const PRECACHE = [
   "/offline.html",
@@ -53,6 +53,7 @@ self.addEventListener("fetch", (event) => {
   const cacheable =
     url.pathname.startsWith("/_next/static/") ||
     url.pathname.startsWith("/icons/") ||
+    url.pathname.startsWith("/fonts/") ||
     /^\/(icon-\d+\.png|favicon\.ico|apple-touch-icon\.png)$/.test(url.pathname);
   if (!cacheable) return;
 

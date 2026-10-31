@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { PaddyMark } from "@/components/brand/paddy-mark";
+import { PaddyMark, PaddyWordmark } from "@/components/brand/paddy-mark";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { InfoTip } from "@/components/ui/info-tip";
 import { cn } from "@/lib/utils";
@@ -28,8 +28,9 @@ export function AuthShell({
       <ThemeToggle className="absolute right-4 top-4" />
       <div className={cn("animate-in w-full", wide ? "max-w-lg" : "max-w-md")}>
         <div className="mb-6 flex flex-col items-center text-center">
-          <Link href="/" aria-label="Paddy home" className="rounded-full">
+          <Link href="/" aria-label="Paddy home" className="flex flex-col items-center gap-1.5 rounded-2xl">
             <PaddyMark size={56} className="drop-shadow-sm" />
+            <PaddyWordmark className="text-base leading-none text-primary" />
           </Link>
           <h1 className="mt-5 text-2xl font-semibold tracking-tight">{title}</h1>
           {(subtitle || tip) && (

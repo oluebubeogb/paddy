@@ -53,12 +53,17 @@ export function PaddyMark({
   );
 }
 
+/** "Paddy" in the Finger Paint brand face. */
+export function PaddyWordmark({ className }: { className?: string }) {
+  return <span className={cn("paddy-wordmark text-foreground", className)}>Paddy</span>;
+}
+
 /** Mark + wordmark, for headers. */
 export function PaddyLogo({ size = 28, className }: { size?: number; className?: string }) {
   return (
     <span className={cn("inline-flex items-center gap-2", className)}>
       <PaddyMark size={size} />
-      <span className="text-lg font-semibold tracking-tight text-foreground">Paddy</span>
+      <PaddyWordmark className="text-lg leading-none" />
     </span>
   );
 }

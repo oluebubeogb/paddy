@@ -106,6 +106,7 @@
   --radius-xl: calc(var(--radius) + 4px);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-brand: var(--font-finger-paint), ui-rounded, "Comic Sans MS", system-ui, sans-serif;
 }
 
 * {
@@ -267,4 +268,12 @@ body {
   }
   .reveal, .float, .text-shimmer, .pulse-ring::before, .pulse-ring::after { animation: none !important; }
   .lift:hover { transform: none; }
+}
+
+/* Paddy wordmark — Finger Paint everywhere the brand name shows. */
+.font-brand,
+.paddy-wordmark {
+  font-family: var(--font-finger-paint), ui-rounded, "Comic Sans MS", system-ui, sans-serif;
+  font-weight: 400;
+  letter-spacing: 0.01em;
 }

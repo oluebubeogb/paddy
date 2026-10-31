@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { ToastProvider } from "@/components/ui/toast";
 import { themeInitScript } from "@/components/theme/theme-script";
@@ -13,6 +14,18 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+});
+
+/**
+ * Finger Paint (Google Fonts, SIL OFL) — Paddy's wordmark face. Self-hosted
+ * from src/app/fonts so builds and offline/PWA never depend on Google.
+ */
+const fingerPaint = localFont({
+  src: "./fonts/FingerPaint-Regular.woff2",
+  variable: "--font-finger-paint",
+  weight: "400",
+  display: "swap",
+  fallback: ["ui-rounded", "Comic Sans MS", "system-ui", "sans-serif"],
 });
 
 export const metadata: Metadata = {
@@ -51,7 +64,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${fingerPaint.variable} h-full antialiased`}
       suppressHydrationWarning
     >
       <head>

@@ -12,7 +12,7 @@ import {
   BellRing,
   Bot,
 } from "lucide-react";
-import { PaddyAvatar, PaddyLogo, PaddyMark } from "@/components/brand/paddy-mark";
+import { PaddyAvatar, PaddyLogo, PaddyMark, PaddyWordmark } from "@/components/brand/paddy-mark";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 
 const FEATURES = [
@@ -217,7 +217,7 @@ export default function LandingPage() {
       <footer className="border-t border-border py-8 text-sm text-muted-foreground">
         <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-3 px-4 sm:flex-row sm:px-6">
           <span className="inline-flex items-center gap-2">
-            <PaddyMark size={18} /> Paddy · Personal AI companion
+            <PaddyMark size={18} /> <PaddyWordmark className="text-base" /> · Personal AI companion
           </span>
           <span className="inline-flex items-center gap-1.5 text-xs">
             Made with <Heart className="h-3.5 w-3.5 fill-primary text-primary" /> for everyday moments
