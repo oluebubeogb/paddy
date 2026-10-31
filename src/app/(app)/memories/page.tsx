@@ -115,9 +115,10 @@ export default function MemoriesPage() {
 
       <ChatSessions />
 
-      <h2 className="-mb-3 text-sm font-semibold">What Paddy remembers</h2>
-
-      <div className="space-y-3">
+      <section className="space-y-3 pt-2" aria-labelledby="memories-heading">
+        <h2 id="memories-heading" className="text-sm font-semibold">
+          What Paddy remembers
+        </h2>
         <div className="relative">
           <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <label htmlFor="memory-search" className="sr-only">
@@ -151,7 +152,7 @@ export default function MemoriesPage() {
             </button>
           ))}
         </div>
-      </div>
+      </section>
 
       {!loaded && <Spinner label="Gathering memories…" />}
 

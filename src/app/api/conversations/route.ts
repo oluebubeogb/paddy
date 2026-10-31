@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
-import { DEFAULT_SESSION_TITLE, startNewSession } from "@/lib/chat/sessions";
+import { DEFAULT_SESSION_TITLE, autoTitleConversation, isAutoReplaceableTitle, isDefaultTitle, sessionTitle, startNewSession } from "@/lib/chat/sessions";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -24,6 +24,18 @@ export async function GET() {
     },
   });
 
+  // Backfill content titles for sessions still named "New conversation" or a
+  // date range (older builds). Local heuristic, capped so the list stays fast.
+  const untitled = conversations
+    .filter((c) => c._count.messages > 0 && isAutoReplaceableTitle(c.title))
+    .slice(0, 8);
+  if (untitled.length) {
+    const titles = await Promise.all(untitled.map((c) => autoTitleConversation(c.id).catch(() => null)));
+    untitled.forEach((c, i) => {
+      if (titles[i]) c.title = titles[i];
+    });
+  }
+
   // The current session is the newest one created — it's the endless main chat.
   const currentId = conversations.reduce<(typeof conversations)[number] | null>(
     (best, c) => (!best || c.createdAt > best.createdAt ? c : best),
@@ -33,6 +45,11 @@ export async function GET() {
   return NextResponse.json({
     conversations: conversations.map(({ _count, ...c }) => ({
       ...c,
+      // Archived sessions with no topical text yet fall back to their date range.
+      title:
+        c.id !== currentId && isDefaultTitle(c.title) && c.lastMessageAt
+          ? sessionTitle(c.createdAt, c.lastMessageAt)
+          : c.title,
       messageCount: _count.messages,
       isCurrent: c.id === currentId,
     })),

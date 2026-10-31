@@ -7,6 +7,7 @@
  * conversation grows forever and every page load stays a small, paginated query.
  */
 import { prisma } from "@/lib/db";
+import { titleFromMessages } from "@/lib/chat/session-title";
 
 export const SESSION_MAX_DAYS = 7;
 export const SESSION_IDLE_DAYS = 3;
@@ -38,13 +39,51 @@ export function sessionTitle(start: Date, end: Date, now: Date = new Date()): st
   return a === b ? a : `${a} – ${b}`;
 }
 
-function isDefaultTitle(title: string | null | undefined) {
+export function isDefaultTitle(title: string | null | undefined) {
   return !title || title === DEFAULT_SESSION_TITLE;
 }
 
-/** Give a finished session a date-range title (unless the user/system named it). */
+const DATE_LABEL = String.raw`[A-Z][a-z]{2} \d{1,2}(?:, \d{4})?`;
+const DATE_RANGE_RE = new RegExp(`^${DATE_LABEL}(?: – ${DATE_LABEL})?$`);
+
+/** Titles Paddy generated itself (placeholder or date range) — safe to replace with a content title. */
+export function isAutoReplaceableTitle(title: string | null | undefined) {
+  return isDefaultTitle(title) || DATE_RANGE_RE.test(title!.trim());
+}
+
+/** How many of a session's first user bubbles feed the content title. */
+const TITLE_SOURCE_MESSAGES = 6;
+
+/**
+ * Name a session from what was said in it (local heuristic — no AI call).
+ * Only replaces placeholder / date-range titles. Returns the new title, if any.
+ */
+export async function autoTitleConversation(conversationId: string): Promise<string | null> {
+  const conv = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    select: { title: true },
+  });
+  if (!conv || !isAutoReplaceableTitle(conv.title)) return null;
+  const firstUser = await prisma.message.findMany({
+    where: { conversationId, role: "user" },
+    orderBy: [{ createdAt: "asc" }, { sequence: "asc" }],
+    take: TITLE_SOURCE_MESSAGES,
+    select: { content: true },
+  });
+  const title = titleFromMessages(firstUser.map((m) => m.content));
+  if (!title || title === conv.title) return null;
+  // Guard against a concurrent manual rename: only overwrite the title we read.
+  const res = await prisma.conversation.updateMany({
+    where: { id: conversationId, title: conv.title },
+    data: { title },
+  });
+  return res.count ? title : null;
+}
+
+/** Give a finished session a content title, else a date range (unless the user/system named it). */
 export async function archiveTitle(conv: { id: string; title: string | null; createdAt: Date; lastMessageAt: Date | null }) {
   if (!isDefaultTitle(conv.title) || !conv.lastMessageAt) return;
+  if (await autoTitleConversation(conv.id).catch(() => null)) return;
   await prisma.conversation.update({
     where: { id: conv.id },
     data: { title: sessionTitle(conv.createdAt, conv.lastMessageAt) },

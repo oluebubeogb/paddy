@@ -8,7 +8,7 @@ import { AIProviderError, aiProvider } from "@/lib/ai/provider";
 import { retrieveRelevantMemories } from "@/lib/memory/store";
 import { enqueueMemoryProcessing } from "@/lib/memory/process";
 import { z } from "zod";
-import { getCurrentConversation, needsRotation } from "@/lib/chat/sessions";
+import { autoTitleConversation, getCurrentConversation, isDefaultTitle, needsRotation } from "@/lib/chat/sessions";
 import { messageSelect as sharedMessageSelect } from "@/lib/chat/message-select";
 
 type Params = { params: Promise<{ id: string }> };
@@ -257,10 +257,17 @@ export async function POST(req: NextRequest, { params }: Params) {
       assistantMessages.push(row);
     }
 
-    await prisma.conversation.update({
+    const updatedConv = await prisma.conversation.update({
       where: { id: convId },
       data: { lastMessageAt: new Date() },
+      select: { title: true },
     });
+
+    // Name the session from its first real user bubbles (local, no extra AI call).
+    // Re-tried each turn while still a placeholder, e.g. after a run of "hi"s.
+    if (isDefaultTitle(updatedConv.title)) {
+      await autoTitleConversation(convId).catch((e) => console.warn("[chat] session title skipped", e));
+    }
 
     // Extract memories in background — does not block the response
     enqueueMemoryProcessing(user.id, convId);

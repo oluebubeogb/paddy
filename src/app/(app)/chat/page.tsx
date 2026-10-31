@@ -725,7 +725,7 @@ function ChatView() {
                 <MessageCircle className={cn("h-4 w-4 shrink-0", sessionId === c.id && "text-primary")} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate">
-                    {c.isCurrent ? "This week" : c.title || "Conversation"}
+                    {c.isCurrent && (!c.title || c.title === "New conversation") ? "This week" : c.title || "Conversation"}
                   </span>
                   {c.lastMessageAt && (
                     <span className="block text-[11px] text-muted-foreground">
